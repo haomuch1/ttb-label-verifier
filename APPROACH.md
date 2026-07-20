@@ -22,10 +22,12 @@ testable, and immune to model drift.
 
 ## Two kinds of checking, kept separate
 
-1. **Cross-check** — form vs. label artwork (both live in the same COLA PDF):
-   brand name (Item 6) and product type checkbox (Item 5). The product type
-   also selects the governing CFR part: Part 4 (wine), Part 5 (distilled
-   spirits), Part 7 (malt beverages).
+1. **Cross-check** — form vs. label artwork (both live in the same COLA
+   document): brand name, product type checkbox, and — on form revisions
+   that carry them — alcohol content and net contents. (Fields are located
+   by adjacent label text, never by item number; see finding 1 below.) The
+   product type also selects the governing CFR part: Part 4 (wine), Part 5
+   (distilled spirits), Part 7 (malt beverages).
 2. **Standalone compliance** — label alone against the CFR: health warning,
    ABV/proof, net contents, class/type, bottler name and address.
 
@@ -199,10 +201,17 @@ Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
   slower region, not the sum (concurrent calls measured against
   sequential: 6.7s vs 12.3s summed on Carlo Giacosa). Honest trade-off
   also observed: removing the form region ended form-to-label bleed,
-  which had been masking genuinely hard label print — Eaglemount's tiny
-  front-label ABV line is now missed rather than back-filled from the
-  form, and diacritics/spacing in form brand names got slightly worse on
-  two fixtures (routed to NEEDS_REVIEW, not wrong answers).
+  which had been masking genuinely hard label print — some earlier
+  "passes" were passing on bled data. Eaglemount's tiny front-label ABV
+  line is now missed rather than back-filled from the form, and a
+  follow-up diagnostic showed the bleed also ran form-ward: the
+  whole-page path returned "BÄRENJÄGER" for a form that literally types
+  "BARENJAGER" (umlauts imported from the label artwork), so the split's
+  plain-ASCII read is the *more* faithful one — that real diacritic-only
+  form/label difference is now absorbed by the brand fuzzy matcher
+  (case/punctuation/diacritics fold), which never applies to the warning
+  check. Residual cross-image duplication remains on one fixture
+  (Eaglemount's warning is stamped onto both of its label entries).
 - **Two Ollama-specific engineering notes** encoded in
   `app/extractors/ollama_extractor.py`: pydantic's `anyOf`-style JSON
   schemas silently produce empty output from Ollama's grammar engine (the
@@ -215,24 +224,31 @@ Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
 
 Hard requirement: **under 5 seconds** for a single label (warm). A prior vendor
 pilot failed at 30–40 seconds and that is the stated reason it died. Hence: one
-model call per document, no chaining, batch mode fans out concurrently with
-`asyncio.gather` under a semaphore.
+extraction round trip per document — two *concurrent* region calls when the
+page splits at the form/label anchor (wall-clock ≈ the slower of the two),
+a single whole-page call otherwise; never sequential chaining. Batch mode
+fans out concurrently with `asyncio.gather` under a semaphore.
 
 ## Tools used
 
 - Claude Code (agentic development)
 - Python / FastAPI, plain static HTML frontend (no build step)
-- Claude vision API (single structured-extraction call)
-- pdf2image / poppler for server-side PDF rendering
+- Pluggable vision extraction: Ollama + qwen2.5vl:7b (local, default) or
+  the Anthropic API (claude-haiku-4-5), both schema-constrained
+- pdf2image / poppler for PDF rendering; pypdf for page classification and
+  PDF anchor coordinates; tesseract OCR for the image anchor split
 - Render free tier for deployment
 
 ## Assumptions
 
 - Inputs are a COLA Form 5100.31 PDF (with label artwork pasted in) or a
   standalone label photo/image.
-- Pages 2–4 of the standard 5100.31 PDF are static instructions and are
-  skipped by matching their boilerplate.
-- No persistence: nothing is stored; each request is stateless.
+- The static instruction pages of a 5100.31 PDF (pages 2–5 on the 04/2023
+  revision) are skipped by matching their boilerplate text, not by page
+  number; pages with no text layer are kept rather than guessed at.
+- No persistence beyond the in-memory audit log of decision records
+  (which itself resets on restart); label images and application content
+  are never stored.
 
 ## Known limitations (stated deliberately)
 
