@@ -46,10 +46,43 @@ CANONICAL_WARNING_ALL_CAPS = CANONICAL_WARNING.upper()
 ABV_MATCH_TOLERANCE = 0.05   # form vs. label, in percentage points
 PROOF_TOLERANCE = 0.1        # proof vs. 2 × ABV
 
+# Readability gate. A real, readable label always yields several distinct
+# kinds of content; when extraction returns fewer than this many, there is
+# too little legible to render ANY verdict — the outcome is a request for
+# a better image, not a compliance decision. Kept deliberately low so a
+# readable-but-violating label (which typically yields 4-6 signals even
+# with the warning missing) can never land here.
+_LABEL_SIGNAL_FIELDS = (
+    "brand_name", "government_warning", "abv_raw",
+    "net_contents", "class_type", "bottler_info",
+)
+MIN_READABLE_SIGNALS = 2
+
+UNREADABLE_MESSAGE = (
+    "Image quality too low to verify — please provide a clearer copy of "
+    "the label."
+)
+
+
+def readable_signals(labels: list[LabelImage]) -> int:
+    """How many distinct kinds of label content extraction could read."""
+    return sum(
+        1 for field in _LABEL_SIGNAL_FIELDS
+        if any((getattr(label, field) or "").strip() for label in labels)
+    )
+
 
 def verify(extraction: Extraction) -> VerificationReport:
     form = extraction.form
     labels = extraction.labels
+
+    if readable_signals(labels) < MIN_READABLE_SIGNALS:
+        # Not a FAIL (no violation was found) and not an ordinary
+        # NEEDS_REVIEW (there is nothing readable to review): the document
+        # needs a better image before any judgment is possible.
+        return VerificationReport(
+            verdict=Verdict.UNREADABLE, cfr_part=None, checks=[],
+        )
 
     checks = [
         # Cross-checks: form vs. label artwork. Each runs only if its form

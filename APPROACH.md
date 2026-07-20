@@ -33,7 +33,7 @@ with a triage summary.
 the label vs "Stone's Throw" in the application is "obviously the same
 thing. You need judgment." This drove case-, punctuation-, and (after real
 data surfaced "Bärenjäger" vs "BARENJAGER") diacritic-insensitive matching
-on brand and class/type — reported as a match with a note, never a failure.
+on brand name — reported as a match with a note, never a failure.
 
 **Strict warning matching.** Jenny Park described the opposite rule for the
 health warning: exact, word-for-word, "GOVERNMENT WARNING:" in caps; she
@@ -177,12 +177,15 @@ Every failure path is a deliberate choice about where degradation lands:
 - **Unreadable PDF** (corrupt, or rendering unavailable) → a graceful
   message with guidance: "If this is a photo, upload it as an image
   instead."
-- **A low-quality or unreadable image can never produce a false PASS.**
-  When little or nothing can be read, mandatory elements come back missing
-  and FAIL with named reasons, and uncertain warning transcriptions route
-  to NEEDS REVIEW — degradation always lands on a human's desk, not in an
-  approval. (A distinct "please provide a better image" outcome, rather
-  than missing-element failures, would be the natural next refinement.)
+- **An unreadable image gets its own outcome, not a false verdict.** When
+  extraction returns too little legible label content to judge (fewer than
+  two distinct kinds of label text readable), the result is a dedicated
+  outcome — "Image quality too low to verify — please provide a clearer
+  copy of the label." — matching how agents actually work: the application
+  isn't rejected, a better image is requested. No audit record is written,
+  because no compliance verdict was rendered. A readable label with real
+  problems still FAILs, and ambiguous-but-readable text still routes to
+  NEEDS REVIEW; this path exists only below the readability floor.
 - **Malformed or unparseable input degrades stepwise, never fatally:**
   unparseable net-contents statements fall back to loose string comparison;
   JSON truncated mid-generation by the local model is repaired at the last

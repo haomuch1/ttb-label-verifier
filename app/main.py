@@ -20,7 +20,8 @@ from app.extractors import get_extractor
 from app.pdf import render_pdf, select_pages
 from app.pipeline import run_extraction
 from app.ratelimit import client_ip, limiter
-from app.rules import verify
+from app.models import Verdict
+from app.rules import UNREADABLE_MESSAGE, verify
 
 app = FastAPI(
     title="TTB Label Verifier",
@@ -118,13 +119,19 @@ async def _verify_one(filename: str, data: bytes, processor: str) -> dict:
     elapsed = time.perf_counter() - start
 
     report = verify(result.extraction)
-    record = audit_log.record(filename, processor, report.verdict.value)
+    if report.verdict == Verdict.UNREADABLE:
+        # No compliance verdict was rendered, so — like error items — no
+        # decision record is written; the response asks for a better image.
+        record = None
+    else:
+        record = audit_log.record(filename, processor, report.verdict.value)
     return {
         "filename": filename,
-        "audit_id": record.id,
-        "processor": record.processor,
-        "processed_at": record.processed_at,
+        "audit_id": record.id if record else None,
+        "processor": processor,
+        "processed_at": record.processed_at if record else None,
         "verdict": report.verdict.value,
+        "message": UNREADABLE_MESSAGE if report.verdict == Verdict.UNREADABLE else None,
         "cfr_part": report.cfr_part,
         "checks": [c.model_dump() for c in report.checks],
         "extraction": result.extraction.model_dump(),

@@ -265,6 +265,53 @@ class TestProofConsistency:
         assert check_proof_consistency(labels).verdict == Verdict.PASS
 
 
+class TestUnreadableOutcome:
+    def test_empty_extraction_is_unreadable_not_fail(self):
+        report = verify(Extraction(form=None, labels=[]))
+        assert report.verdict == Verdict.UNREADABLE
+        assert report.checks == []
+        assert report.cfr_part is None
+
+    def test_single_readable_field_is_still_unreadable(self):
+        # A glare shot that only yields the big brand lettering: below the
+        # readability floor — ask for a better image, don't judge.
+        report = verify(Extraction(labels=[label(brand_name="Stone's Throw")]))
+        assert report.verdict == Verdict.UNREADABLE
+
+    def test_readable_violation_still_fails_not_unreadable(self):
+        # Plenty was read; the warning is genuinely absent — a real FAIL.
+        readable_but_violating = label(
+            brand_name="Stone's Throw",
+            abv_raw="12% ALC/VOL",
+            net_contents="750 ML",
+            class_type="Red Wine",
+            bottler_info="Bottled by Stone's Throw Winery, Napa, CA",
+        )
+        report = verify(Extraction(labels=[readable_but_violating]))
+        assert report.verdict == Verdict.FAIL
+
+    def test_readable_but_ambiguous_still_needs_review_not_unreadable(self):
+        near_miss = CANONICAL_WARNING.upper().replace("BIRTH DEFECTS", "BIRTH EFFECTS")
+        ambiguous = label(
+            brand_name="Stone's Throw",
+            government_warning=near_miss,
+            abv_raw="12% ALC/VOL",
+            net_contents="750 ML",
+            class_type="Red Wine",
+            bottler_info="Bottled by Stone's Throw Winery, Napa, CA",
+        )
+        report = verify(Extraction(labels=[ambiguous]))
+        assert report.verdict == Verdict.NEEDS_REVIEW
+
+    def test_two_signals_cross_the_readability_floor(self):
+        # At exactly the floor the document is judged (and fails on its
+        # genuinely missing elements) rather than bounced for quality.
+        report = verify(Extraction(labels=[
+            label(brand_name="Stone's Throw", net_contents="750 ML"),
+        ]))
+        assert report.verdict == Verdict.FAIL
+
+
 class TestAggregation:
     def _complete_label(self) -> LabelImage:
         return label(

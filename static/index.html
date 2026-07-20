@@ -70,6 +70,7 @@
   .band.pass { background: #1a7f37; color: #fff; }
   .band.review { background: #ffd33d; color: #111; border-color: #9a6700; }
   .band.fail { background: #b91c1c; color: #fff; }
+  .band.unread { background: #475569; color: #fff; }
 
   .signoff {
     display: flex; flex-wrap: wrap; align-items: center; gap: .6rem;
@@ -93,6 +94,7 @@
   .chip.NEEDS_REVIEW { background: #fff3bf; color: #6b4a00; }
   .chip.FAIL { background: #fadadb; color: #7d1214; }
   .chip.NOT_APPLICABLE { background: #eee; color: #666; }
+  .chip.UNREADABLE { background: #dbe2ea; color: #334155; }
   .check-name { font-weight: 700; }
   .check-detail { color: #333; }
   .meta { color: #555; font-size: .95rem; margin-top: .75rem; }
@@ -196,10 +198,12 @@ const BAND_TEXT = {
   "PASS": ["PASS", "This label meets every check.", "pass"],
   "NEEDS_REVIEW": ["NEEDS REVIEW", "Nothing failed, but a person should look at this one.", "review"],
   "FAIL": ["FAIL", "This label has a problem. See below.", "fail"],
+  "UNREADABLE": ["CAN'T READ THE LABEL",
+    "Image quality too low to verify — please provide a clearer copy of the label.", "unread"],
 };
 const CHIP_TEXT = {
   "PASS": "PASS", "NEEDS_REVIEW": "NEEDS REVIEW",
-  "FAIL": "FAIL", "NOT_APPLICABLE": "Not checked",
+  "FAIL": "FAIL", "NOT_APPLICABLE": "Not checked", "UNREADABLE": "Can't read",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -420,8 +424,15 @@ function renderSingle(r) {
   const root = $("single-result");
   const [word, meaning, cls] = BAND_TEXT[r.verdict] || ["?", "", ""];
   const band = el("div", "band " + cls);
-  band.append(el("span", "word", word), el("span", "meaning", meaning));
+  band.append(el("span", "word", word), el("span", "meaning", r.message || meaning));
   root.append(band);
+
+  if (r.verdict === "UNREADABLE") {
+    root.append(el("p", "meta",
+      `Nothing was recorded for this upload — try a sharper, straight-on image. ` +
+      `(Checked in ${r.seconds} seconds.)`));
+    return;
+  }
 
   root.append(signoffControl(r, (rec) => {
     const who = rec.name_mismatch
@@ -504,7 +515,7 @@ function batchCounts() {
     cleared: rs.filter(r => !r.error && r.verdict === "PASS").length,
     review: rs.filter(r => !r.error && r.verdict === "NEEDS_REVIEW").length,
     failed: rs.filter(r => !r.error && r.verdict === "FAIL").length,
-    errors: rs.filter(r => r.error).length,
+    errors: rs.filter(r => r.error || r.verdict === "UNREADABLE").length,
   };
 }
 
@@ -534,7 +545,7 @@ function checkBatchComplete() {
 const GROUPS = [
   ["NEEDS_REVIEW", "review", "Needs review — sign off each one"],
   ["FAIL", "fail", "Failed — going back to the applicant"],
-  ["ERROR", "error", "Could not be checked"],
+  ["ERROR", "error", "Could not be checked — need a better copy"],
   ["PASS", "pass", "Cleared automatically — no action needed"],
 ];
 
@@ -543,7 +554,8 @@ function renderGroups() {
   root.innerHTML = "";
   for (const [verdict, cls, title] of GROUPS) {
     const items = batch.results.filter(r =>
-      verdict === "ERROR" ? r.error : (!r.error && r.verdict === verdict));
+      verdict === "ERROR" ? (r.error || r.verdict === "UNREADABLE")
+                          : (!r.error && r.verdict === verdict));
     if (!items.length) continue;
     const group = el("div", "group " + cls);
     group.append(el("h2", null, `${title} (${items.length})`));
@@ -587,6 +599,11 @@ function batchItem(r, verdict) {
   item.append(el("div", "head", r.filename));
   if (r.error) {
     item.append(el("p", "why err", r.error));
+    return item;
+  }
+  if (r.verdict === "UNREADABLE") {
+    item.append(el("p", "why", r.message ||
+      "Image quality too low to verify — please provide a clearer copy of the label."));
     return item;
   }
   const flagged = r.checks.filter(c => c.verdict === "FAIL" || c.verdict === "NEEDS_REVIEW");

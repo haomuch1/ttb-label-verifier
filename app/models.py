@@ -111,6 +111,7 @@ class Verdict(str, Enum):
     NEEDS_REVIEW = "NEEDS_REVIEW"
     FAIL = "FAIL"
     NOT_APPLICABLE = "NOT_APPLICABLE"  # e.g. cross-check with no form field; never affects the overall verdict
+    UNREADABLE = "UNREADABLE"  # report-level only: too little legible content to render any verdict
 
 
 class CheckSource(str, Enum):

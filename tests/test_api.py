@@ -201,6 +201,45 @@ class TestAudit:
         assert second.status_code == 409
 
 
+class TestUnreadableOutcome:
+    @pytest.fixture
+    def unreadable_backend(self, monkeypatch):
+        from app.extractors.base import ExtractionResult
+        from app.models import Extraction
+
+        async def fake(extractor, images, pdf_info=None):
+            return ExtractionResult(
+                extraction=Extraction(form=None, labels=[]),
+                input_tokens=0, output_tokens=0, model="mock",
+            )
+
+        monkeypatch.setattr("app.main.run_extraction", fake)
+
+    def test_unreadable_returns_message_and_no_audit_record(
+        self, client, unreadable_backend
+    ):
+        resp = client.post(
+            "/api/verify", files={"file": ("blurry.png", png_bytes(), "image/png")},
+            data={"processor": "Jenny Park"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["verdict"] == "UNREADABLE"
+        assert "clearer copy" in body["message"]
+        assert body["audit_id"] is None
+        assert body["checks"] == []
+        # like error items: no verdict was rendered, so no decision record
+        assert client.get("/api/audit").json()["records"] == []
+
+    def test_readable_upload_still_gets_audit_record(self, client):
+        resp = client.post(
+            "/api/verify", files={"file": ("ok.png", png_bytes(), "image/png")},
+            data={"processor": "Jenny Park"},
+        )
+        assert resp.json()["audit_id"] is not None
+        assert len(client.get("/api/audit").json()["records"]) == 1
+
+
 class TestStatic:
     def test_root_serves_ui(self, client):
         resp = client.get("/")
