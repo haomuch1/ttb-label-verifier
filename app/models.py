@@ -54,12 +54,18 @@ class FormFields(BaseModel):
     """
 
     brand_name: Optional[str] = None
+    brand_name_label: Optional[str] = Field(
+        default=None, description="Exact form-label text the value was found next to"
+    )
     product_type: Optional[ProductType] = None
+    product_type_label: Optional[str] = None
     alcohol_content_raw: Optional[str] = Field(
         default=None,
         description='Verbatim, e.g. "35" (Bärenjäger) or "12%" (Lenz Moser)',
     )
+    alcohol_content_label: Optional[str] = None
     net_contents_raw: Optional[str] = None
+    net_contents_label: Optional[str] = None
 
 
 class LabelImage(BaseModel):
