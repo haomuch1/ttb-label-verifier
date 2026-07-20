@@ -141,8 +141,8 @@ def check_brand_name(form: FormFields | None, labels: list[LabelImage]) -> Check
                 check_id=check_id, name=name, source=CheckSource.CROSS_CHECK,
                 verdict=Verdict.PASS,
                 detail=(
-                    f"Match (differs only in case/punctuation): form '{form.brand_name}' "
-                    f"vs. label '{brand}'."
+                    f"Match (differs only in case/punctuation/diacritics): "
+                    f"form '{form.brand_name}' vs. label '{brand}'."
                 ),
             )
     return CheckResult(

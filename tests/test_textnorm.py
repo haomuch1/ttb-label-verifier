@@ -75,6 +75,11 @@ class TestNormalizeLoose:
     def test_accented_letters_survive(self):
         assert normalize_loose("BÄRENJÄGER") == normalize_loose("Bärenjäger")
 
+    def test_diacritics_fold_to_base_letters(self):
+        # Real approved COLA: form types BARENJAGER, label prints Bärenjäger.
+        assert normalize_loose("BARENJAGER") == normalize_loose("Bärenjäger")
+        assert normalize_loose("Chateau Migrana") == normalize_loose("Château Migraña")
+
     def test_different_names_do_not_collide(self):
         assert normalize_loose("Stone's Throw") != normalize_loose("Stone Cold")
 

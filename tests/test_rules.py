@@ -149,6 +149,21 @@ class TestBrandCrossCheck:
         result = check_brand_name(None, [label(brand_name="Anything")])
         assert result.verdict == Verdict.NOT_APPLICABLE
 
+    def test_real_diacritic_only_difference_passes_with_note(self):
+        # Approved COLA observed live: form 'BARENJAGER', label 'Bärenjäger'.
+        form = FormFields(brand_name="BARENJAGER")
+        result = check_brand_name(form, [label(brand_name="Bärenjäger")])
+        assert result.verdict == Verdict.PASS
+        assert "diacritics" in result.detail
+
+    def test_warning_check_does_not_fold_diacritics(self):
+        # The strict warning comparison must be untouched by diacritic
+        # folding: a diacritic substitution in the statutory text is still
+        # not an exact match (it lands in the near-miss tier, not PASS).
+        altered = CANONICAL_WARNING.replace("alcoholic", "älcoholic")
+        result = check_health_warning([label(government_warning=altered)])
+        assert result.verdict != Verdict.PASS
+
     def test_brand_on_second_image_passes(self):
         form = FormFields(brand_name="Bärenjäger")
         labels = [label(), label(brand_name="Bärenjäger")]

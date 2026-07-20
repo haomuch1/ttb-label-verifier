@@ -8,6 +8,7 @@ normalize case — case sensitivity is what catches a title-case
 """
 
 import re
+import unicodedata
 
 # Unicode punctuation that extraction may return for what the label prints
 # as plain ASCII. Mapping these is an OCR-artifact fix, not a compliance
@@ -54,15 +55,24 @@ def normalize_warning(text: str) -> str:
     return collapse_whitespace(rejoin_hyphenated_breaks(normalize_punctuation(text)))
 
 
-def normalize_loose(text: str) -> str:
-    """Case- and punctuation-insensitive form for fuzzy cross-checks.
+def fold_diacritics(text: str) -> str:
+    """Strip diacritical marks: ä→a, é→e, ñ→n (Unicode NFKD fold)."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
 
-    "STONE'S THROW" and "Stone's Throw" normalize identically. Apostrophes
+
+def normalize_loose(text: str) -> str:
+    """Case-, punctuation-, and diacritic-insensitive form for fuzzy
+    cross-checks (brand name, class/type).
+
+    "STONE'S THROW" and "Stone's Throw" normalize identically, and so do
+    "BARENJAGER" and "Bärenjäger" — a real approved COLA types the brand
+    without umlauts on the form while the label prints them. Apostrophes
     are deleted (STONE'S == Stones); other punctuation becomes a space
-    (Stone-Throw == Stone Throw). Accented letters are kept so
-    "Bärenjäger" survives.
+    (Stone-Throw == Stone Throw). Deliberately NOT used by the government
+    warning comparison, which stays strict.
     """
-    text = normalize_punctuation(text).casefold()
+    text = fold_diacritics(normalize_punctuation(text)).casefold()
     text = text.replace("'", "")
     text = re.sub(r"[^\w\s]", " ", text)
     text = text.replace("_", " ")
