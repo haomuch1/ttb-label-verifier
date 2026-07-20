@@ -90,6 +90,50 @@ def parse_abv(raw: str | None) -> float | None:
     return value if 0 < value <= 100 else None
 
 
+# Net contents: normalize notation and metric scale, but keep measurement
+# systems apart. Metric quantities canonicalize to milliliters; US fluid
+# ounces stay in their own system — converting across systems would
+# silently answer a real standards-of-fill question that belongs to a
+# human.
+_NET_UNITS: list[tuple[str, str, float]] = [
+    # (regex fragment, system, factor to canonical unit of that system)
+    (r"millilit(?:er|re)s?", "metric", 1),
+    (r"centilit(?:er|re)s?", "metric", 10),
+    (r"lit(?:er|re)s?", "metric", 1000),
+    (r"ml", "metric", 1),
+    (r"cl", "metric", 10),
+    (r"l", "metric", 1000),
+    (r"fluid\s+ounces?", "fl oz", 1),
+    (r"fl\.?\s*ozs?\.?", "fl oz", 1),
+    (r"ounces?", "fl oz", 1),
+    (r"oz\.?", "fl oz", 1),
+]
+
+_NET_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(" + "|".join(u for u, _, _ in _NET_UNITS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def parse_net_contents(raw: str | None) -> tuple[float, str] | None:
+    """Parse a net-contents statement into (quantity, system).
+
+    Metric returns milliliters ("750 MILLILITERS", "750ml", "75 cl", and
+    "0.75 L" all parse to (750.0, "metric")); US fluid ounces return
+    (value, "fl oz"). None when nothing parseable is found.
+    """
+    if not raw:
+        return None
+    m = _NET_RE.search(raw)
+    if not m:
+        return None
+    value, unit_text = float(m.group(1)), m.group(2)
+    for fragment, system, factor in _NET_UNITS:
+        if re.fullmatch(fragment, unit_text, re.IGNORECASE):
+            return value * factor, system
+    return None
+
+
 def parse_proof(raw: str | None) -> float | None:
     """Parse a proof statement ("70 PROOF", or a bare "70")."""
     if not raw:

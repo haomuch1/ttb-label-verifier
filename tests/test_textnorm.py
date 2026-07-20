@@ -10,6 +10,7 @@ from app.textnorm import (
     normalize_loose,
     normalize_warning,
     parse_abv,
+    parse_net_contents,
     parse_proof,
     rejoin_hyphenated_breaks,
 )
@@ -115,6 +116,30 @@ class TestParseProof:
 
     def test_none(self):
         assert parse_proof(None) is None
+
+
+class TestParseNetContents:
+    def test_spelled_out_milliliters(self):
+        assert parse_net_contents("750 MILLILITERS") == (750.0, "metric")
+
+    def test_abbreviated_case_variants(self):
+        for raw in ("750 ML", "750 mL", "750ml"):
+            assert parse_net_contents(raw) == (750.0, "metric"), raw
+
+    def test_liters_scale_to_milliliters(self):
+        assert parse_net_contents("0.75 L") == (750.0, "metric")
+        assert parse_net_contents("1.5 Liters") == (1500.0, "metric")
+
+    def test_centiliters_scale(self):
+        assert parse_net_contents("75 cl") == (750.0, "metric")
+
+    def test_fluid_ounces_stay_their_own_system(self):
+        assert parse_net_contents("12 FL. OZ.") == (12.0, "fl oz")
+        assert parse_net_contents("12 fluid ounces") == (12.0, "fl oz")
+
+    def test_unparseable(self):
+        assert parse_net_contents(None) is None
+        assert parse_net_contents("one bottle") is None
 
 
 class TestCollapseWhitespace:

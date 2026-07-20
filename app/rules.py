@@ -18,7 +18,13 @@ from app.models import (
     Verdict,
     VerificationReport,
 )
-from app.textnorm import normalize_loose, normalize_warning, parse_abv, parse_proof
+from app.textnorm import (
+    normalize_loose,
+    normalize_warning,
+    parse_abv,
+    parse_net_contents,
+    parse_proof,
+)
 
 # 27 CFR 16.21 — verbatim statutory text.
 CANONICAL_WARNING = (
@@ -248,6 +254,43 @@ def check_net_contents_cross(form: FormFields | None, labels: list[LabelImage]) 
             "the standalone check reports that separately.",
         )
 
+    # Compare quantities, not unit spellings: "750 MILLILITERS", "750 ML",
+    # and "0.75 L" are the same amount.
+    form_qty = parse_net_contents(form.net_contents_raw)
+    parsed = [(value, parse_net_contents(value)) for value in label_values]
+    if form_qty is not None:
+        form_amount, form_system = form_qty
+        unit_word = "mL" if form_system == "metric" else "fl oz"
+        for raw, qty in parsed:
+            if qty and qty[1] == form_system and abs(qty[0] - form_amount) < 0.01:
+                note = (
+                    "" if raw == form.net_contents_raw
+                    else f" — same quantity ({form_amount:g} {unit_word}), different notation"
+                )
+                return CheckResult(
+                    check_id=check_id, name=name, source=CheckSource.CROSS_CHECK,
+                    verdict=Verdict.PASS,
+                    detail=f"Form '{form.net_contents_raw}' matches label '{raw}'{note}.",
+                )
+        # No same-system match. If the label uses a different measurement
+        # system (metric vs US fluid ounces), do NOT convert across
+        # systems — that's a standards-of-fill question for a human.
+        other_system = [
+            (raw, qty) for raw, qty in parsed if qty and qty[1] != form_system
+        ]
+        if other_system and not any(qty and qty[1] == form_system for _, qty in parsed):
+            raws = ", ".join(f"'{raw}'" for raw, _ in other_system)
+            return CheckResult(
+                check_id=check_id, name=name, source=CheckSource.CROSS_CHECK,
+                verdict=Verdict.NEEDS_REVIEW,
+                detail=(
+                    f"Form states '{form.net_contents_raw}' but the label uses a "
+                    f"different measurement system: {raws}. Not converted "
+                    "automatically — standards of fill should be checked by a person."
+                ),
+            )
+
+    # Fallback for unparseable statements: loose string comparison.
     form_key = normalize_loose(form.net_contents_raw).replace(" ", "")
     for value in label_values:
         if normalize_loose(value).replace(" ", "") == form_key:

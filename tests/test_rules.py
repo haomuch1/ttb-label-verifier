@@ -12,6 +12,7 @@ from app.rules import (
     check_abv_cross,
     check_brand_name,
     check_health_warning,
+    check_net_contents_cross,
     check_product_type,
     check_proof_consistency,
     verify,
@@ -185,6 +186,49 @@ class TestAbvCrossCheck:
 
     def test_missing_form_field_not_applicable(self):
         result = check_abv_cross(FormFields(), [label(abv_raw="12%")])
+        assert result.verdict == Verdict.NOT_APPLICABLE
+
+
+class TestNetContentsCrossCheck:
+    def _check(self, form_raw, label_raw):
+        form = FormFields(net_contents_raw=form_raw)
+        return check_net_contents_cross(form, [label(net_contents=label_raw)])
+
+    def test_identical_notation_passes(self):
+        result = self._check("750 ML", "750 ML")
+        assert result.verdict == Verdict.PASS
+
+    def test_spelled_out_vs_abbreviated_passes(self):
+        # The real case observed live: Bärenjäger's form says
+        # 750 MILLILITERS, the label says 750 ML — same quantity.
+        result = self._check("750 MILLILITERS", "750 ML")
+        assert result.verdict == Verdict.PASS
+        assert "same quantity" in result.detail
+
+    def test_case_and_spacing_variants_pass(self):
+        assert self._check("750 mL", "750ml").verdict == Verdict.PASS
+
+    def test_liters_vs_milliliters_scale_passes(self):
+        result = self._check("0.75 L", "750 ML")
+        assert result.verdict == Verdict.PASS
+
+    def test_metric_vs_fluid_ounces_not_auto_converted(self):
+        # 25.4 fl oz ≈ 750 mL, but cross-system conversion is a
+        # standards-of-fill question — never silently agree.
+        result = self._check("750 ML", "25.4 FL. OZ.")
+        assert result.verdict == Verdict.NEEDS_REVIEW
+        assert "measurement system" in result.detail
+
+    def test_different_quantities_flagged(self):
+        result = self._check("750 ML", "700 ML")
+        assert result.verdict == Verdict.NEEDS_REVIEW
+
+    def test_unparseable_falls_back_to_string_match(self):
+        result = self._check("one magnum", "ONE MAGNUM")
+        assert result.verdict == Verdict.PASS
+
+    def test_missing_form_field_not_applicable(self):
+        result = check_net_contents_cross(FormFields(), [label(net_contents="750 ML")])
         assert result.verdict == Verdict.NOT_APPLICABLE
 
 
