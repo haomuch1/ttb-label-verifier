@@ -16,6 +16,12 @@
   h2 { font-size: 1.3rem; margin: 1.25rem 0 .5rem; }
   .sub { color: #444; margin: 0 0 1rem; }
 
+  #home-note {
+    display: none; padding: 1rem; margin: 0 0 1rem; border-radius: 10px;
+    background: #d7efdd; border: 2px solid #1a7f37; color: #0f5223;
+    font-size: 1.15rem; font-weight: 700; text-align: center;
+  }
+
   .nav { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.25rem; }
   .nav button {
     flex: 1 1 200px; cursor: pointer; padding: 1rem .8rem;
@@ -72,10 +78,11 @@
   }
   .signoff label { font-weight: 700; }
   .signoff input { flex: 1 1 200px; font-size: 1.05rem; padding: .45rem .6rem; border: 2px solid #888; border-radius: 8px; }
-  .signoff button {
+  .signoff button, .ack-btn {
     cursor: pointer; font-size: 1.05rem; font-weight: 700; padding: .55rem .9rem;
     background: #0b4f8a; color: #fff; border: 2px solid #083a66; border-radius: 8px;
   }
+  .ack-row { margin: .6rem 0 .2rem; }
   .attest { font-weight: 700; padding: .6rem .2rem; }
   .attest .flag { color: #9a6700; }
 
@@ -117,6 +124,8 @@
 </head>
 <body>
   <h1>TTB Label Verifier</h1>
+
+  <div id="home-note" role="status" aria-live="polite"></div>
 
   <nav class="nav" aria-label="What do you want to do?">
     <button id="nav-process" aria-pressed="false">Process a form
@@ -192,12 +201,6 @@ const CHIP_TEXT = {
   "PASS": "PASS", "NEEDS_REVIEW": "NEEDS REVIEW",
   "FAIL": "FAIL", "NOT_APPLICABLE": "Not checked",
 };
-const GROUPS = [
-  ["NEEDS_REVIEW", "review", "Needs review — please look at these"],
-  ["FAIL", "fail", "Failed — see what went wrong"],
-  ["PASS", "pass", "Passed — no action needed"],
-  ["ERROR", "error", "Could not be checked"],
-];
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -262,15 +265,51 @@ function clearStaged(mode) {
   updateGate(mode);
 }
 
-/* ---------- view switching ---------- */
+/* ---------- batch triage state ---------- */
+let batch = null;  // {results, reviewed: Map(audit_id -> record), failAcked, streaming}
+
+function freshBatchState() {
+  return { results: [], reviewed: new Map(), failAcked: false, streaming: false };
+}
+
+/* ---------- views: every navigation gives a fresh screen ---------- */
 const views = { process: "view-process", batch: "view-batch", audit: "view-audit" };
+
+function resetModes() {
+  // Name carries over; nothing else does.
+  clearStaged("one");
+  clearStaged("batch");
+  $("single-result").innerHTML = "";
+  $("status").textContent = "";
+  $("batch-status").textContent = "";
+  $("batch-summary").style.display = "none";
+  $("batch-summary").textContent = "";
+  $("batch-groups").innerHTML = "";
+  batch = null;
+}
+
 function show(view) {
+  $("home-note").style.display = "none";
+  resetModes();
   for (const [key, id] of Object.entries(views)) {
     $(id).classList.toggle("active", key === view);
     $("nav-" + key).setAttribute("aria-pressed", String(key === view));
   }
   if (view === "audit") loadAudit();
 }
+
+function goHome(message) {
+  resetModes();
+  for (const [key, id] of Object.entries(views)) {
+    $(id).classList.remove("active");
+    $("nav-" + key).setAttribute("aria-pressed", "false");
+  }
+  const note = $("home-note");
+  note.textContent = message || "";
+  note.style.display = message ? "block" : "none";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 $("nav-process").onclick = () => show("process");
 $("nav-batch").onclick = () => show("batch");
 $("nav-audit").onclick = () => show("audit");
@@ -300,7 +339,7 @@ $("go-one").onclick = () => processOne();
 $("go-batch").onclick = () => processBatch();
 
 /* ---------- sign-off (two-name attestation) ---------- */
-function signoffControl(record) {
+function signoffControl(record, onDone) {
   const box = el("div", "signoff");
   const label = el("label", null, "Reviewed by (your name):");
   const input = el("input");
@@ -331,6 +370,7 @@ function signoffControl(record) {
       const body = await resp.json();
       if (!resp.ok) throw new Error(body.detail || resp.statusText);
       box.replaceWith(attestLine(body));
+      if (onDone) onDone(body);
     } catch (e) {
       btn.disabled = false;
       note.textContent = "Sorry — " + e.message;
@@ -383,7 +423,12 @@ function renderSingle(r) {
   band.append(el("span", "word", word), el("span", "meaning", meaning));
   root.append(band);
 
-  root.append(signoffControl(r));
+  root.append(signoffControl(r, (rec) => {
+    const who = rec.name_mismatch
+      ? `processed by ${rec.processor}, reviewed by ${rec.reviewer}`
+      : `processed and reviewed by ${rec.reviewer}`;
+    goHome(`Done — ${r.filename} recorded as ${CHIP_TEXT[r.verdict]} (${who}).`);
+  }));
 
   const heading = el("h2", null, "What was checked");
   const list = el("ul", "checks");
@@ -407,6 +452,8 @@ async function processBatch() {
   const name = $("name-batch").value.trim();
   const files = staged.batch;
   if (!name || !files.length) return;
+  batch = freshBatchState();
+  batch.streaming = true;
   $("batch-groups").innerHTML = "";
   $("batch-summary").style.display = "none";
   $("batch-status").textContent = `Checking ${files.length} files …`;
@@ -415,7 +462,6 @@ async function processBatch() {
   for (const f of files) form.append("files", f);
   form.append("processor", name);
 
-  const results = [];
   try {
     const resp = await fetch("/api/verify/batch", { method: "POST", body: form });
     if (!resp.ok) {
@@ -434,43 +480,109 @@ async function processBatch() {
         const line = buffer.slice(0, nl).trim();
         buffer = buffer.slice(nl + 1);
         if (!line) continue;
-        results.push(JSON.parse(line));
-        $("batch-status").textContent = `Checked ${results.length} of ${files.length} …`;
-        renderGroups(results);
+        batch.results.push(JSON.parse(line));
+        $("batch-status").textContent = `Checked ${batch.results.length} of ${files.length} …`;
+        renderGroups();
       }
     }
+    batch.streaming = false;
     $("batch-status").textContent = "";
-    const done_ = results.length;
-    const review = results.filter(r => r.verdict === "NEEDS_REVIEW").length;
-    const failed = results.filter(r => r.error || r.verdict === "FAIL").length;
-    const cleared = done_ - review - failed;
-    const pct = done_ ? Math.round((cleared / done_) * 100) : 0;
-    $("batch-summary").textContent =
-      `${cleared} of ${done_} cleared automatically (${pct}%). ` +
-      `${review} need a person to review. ${failed} failed or had errors.`;
-    $("batch-summary").style.display = "block";
+    renderSummary();
+    renderGroups();
+    checkBatchComplete();
   } catch (e) {
+    if (batch) batch.streaming = false;
     $("batch-status").textContent = "Sorry — " + e.message;
   } finally {
     clearStaged("batch");
   }
 }
 
-function renderGroups(results) {
+function batchCounts() {
+  const rs = batch.results;
+  return {
+    cleared: rs.filter(r => !r.error && r.verdict === "PASS").length,
+    review: rs.filter(r => !r.error && r.verdict === "NEEDS_REVIEW").length,
+    failed: rs.filter(r => !r.error && r.verdict === "FAIL").length,
+    errors: rs.filter(r => r.error).length,
+  };
+}
+
+function renderSummary() {
+  const c = batchCounts();
+  const total = batch.results.length;
+  const pct = total ? Math.round((c.cleared / total) * 100) : 0;
+  $("batch-summary").textContent =
+    `${c.cleared} of ${total} cleared automatically (${pct}%). ` +
+    `${c.review} need a person to review. ${c.failed + c.errors} failed or had errors.`;
+  $("batch-summary").style.display = "block";
+}
+
+function checkBatchComplete() {
+  if (!batch || batch.streaming) return;
+  const c = batchCounts();
+  const reviewsDone = batch.results
+    .filter(r => !r.error && r.verdict === "NEEDS_REVIEW")
+    .every(r => batch.reviewed.has(r.audit_id));
+  const failsHandled = (c.failed + c.errors) === 0 || batch.failAcked;
+  if (reviewsDone && failsHandled) {
+    goHome(`Batch complete — ${c.cleared} cleared, ${c.review} reviewed, ` +
+           `${c.failed + c.errors} flagged.`);
+  }
+}
+
+const GROUPS = [
+  ["NEEDS_REVIEW", "review", "Needs review — sign off each one"],
+  ["FAIL", "fail", "Failed — going back to the applicant"],
+  ["ERROR", "error", "Could not be checked"],
+  ["PASS", "pass", "Cleared automatically — no action needed"],
+];
+
+function renderGroups() {
   const root = $("batch-groups");
   root.innerHTML = "";
   for (const [verdict, cls, title] of GROUPS) {
-    const items = results.filter(r =>
+    const items = batch.results.filter(r =>
       verdict === "ERROR" ? r.error : (!r.error && r.verdict === verdict));
     if (!items.length) continue;
     const group = el("div", "group " + cls);
     group.append(el("h2", null, `${title} (${items.length})`));
-    for (const r of items) group.append(batchItem(r));
+    for (const r of items) group.append(batchItem(r, verdict));
+    if ((verdict === "FAIL" || verdict === "ERROR") && !batch.failAcked
+        && cls === "fail") {
+      group.append(ackControl());
+    }
     root.append(group);
+  }
+  // If there are only errors (no FAIL group), the acknowledge action
+  // attaches to the error group instead.
+  if (!batch.failAcked) {
+    const c = batchCounts();
+    if (c.failed === 0 && c.errors > 0) {
+      const errGroup = [...root.querySelectorAll(".group.error")][0];
+      if (errGroup) errGroup.append(ackControl());
+    }
+  }
+  if (batch.failAcked) {
+    for (const g of root.querySelectorAll(".group.fail, .group.error")) {
+      g.append(el("p", "attest", "Marked as seen — these go back to the applicant."));
+    }
   }
 }
 
-function batchItem(r) {
+function ackControl() {
+  const row = el("div", "ack-row");
+  const btn = el("button", "ack-btn", "Mark as seen — these go back to the applicant");
+  btn.onclick = () => {
+    batch.failAcked = true;
+    renderGroups();
+    checkBatchComplete();
+  };
+  row.append(btn);
+  return row;
+}
+
+function batchItem(r, verdict) {
   const item = el("div", "item");
   item.append(el("div", "head", r.filename));
   if (r.error) {
@@ -495,7 +607,20 @@ function batchItem(r) {
     list.append(li);
   }
   details.append(list);
-  item.append(details, signoffControl(r));
+  item.append(details);
+
+  // Triage: only the review queue gets individual sign-off. PASS flows
+  // through untouched; FAIL is acknowledged at the group level.
+  if (verdict === "NEEDS_REVIEW") {
+    if (batch.reviewed.has(r.audit_id)) {
+      item.append(attestLine(batch.reviewed.get(r.audit_id)));
+    } else {
+      item.append(signoffControl(r, (rec) => {
+        batch.reviewed.set(r.audit_id, rec);
+        checkBatchComplete();
+      }));
+    }
+  }
   return item;
 }
 
