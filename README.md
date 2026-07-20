@@ -11,11 +11,14 @@ limitations.
 
 ## What it checks
 
-**Cross-checks** (form vs. label artwork within the same PDF):
-- Item 6 brand name vs. the brand name on the pasted label (fuzzy — case and
+**Cross-checks** (form vs. label artwork within the same PDF — each runs only
+if the field is present on the form; a missing form field never fails):
+- Brand name vs. the brand name on the pasted label (fuzzy — case and
   punctuation differences pass with a note)
-- Item 5 product type checkbox (Wine / Distilled Spirits / Malt Beverages) vs.
-  the label, which also selects the governing CFR part (Part 4 / 5 / 7)
+- Product type checkbox (Wine / Distilled Spirits / Malt Beverages) vs. the
+  label, which also selects the governing CFR part (Part 4 / 5 / 7)
+- Alcohol content and net contents, when the form revision carries those
+  fields (real filings do; the blank 04/2023 form does not)
 
 **Standalone compliance** (label alone against the CFR):
 - Government health warning — strict verbatim match against 27 CFR 16.21
@@ -43,6 +46,19 @@ uvicorn app.main:app --reload
 ```
 
 Open http://127.0.0.1:8000 — health check at http://127.0.0.1:8000/health.
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The suite covers the text-normalization edge cases (line-wrapped and
+hyphenated warning text, case preservation) and scenario reconstructions of
+three real approved COLAs from TTB's Public COLA Registry — including
+Bärenjäger's genuine form-to-label ABV discrepancy. Image fixtures go in
+`tests/fixtures/` (see the README there).
 
 ## Deployment (Render)
 

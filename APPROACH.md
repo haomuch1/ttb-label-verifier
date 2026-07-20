@@ -29,9 +29,50 @@ testable, and immune to model drift.
 2. **Standalone compliance** — label alone against the CFR: health warning,
    ABV/proof, net contents, class/type, bottler name and address.
 
-Form 5100.31 has **no fields** for ABV, class/type, or net contents — only
-brand name and product type can be cross-checked against the form. Everything
-else is standalone. The app does not invent form fields.
+**Every cross-check field is optional.** Which fields a form carries depends
+on the revision: the blank 04/2023 Form 5100.31 has no ABV or net contents
+fields, but all three real filings examined (below) have both. A cross-check
+runs when its field is present on the form and falls back to standalone
+compliance when absent — a missing form field is never a failure
+(`NOT_APPLICABLE` verdict, ignored by aggregation). The app does not invent
+form fields.
+
+## Findings from real approved COLAs
+
+The design was corrected against three approved COLAs pulled from TTB's
+Public COLA Registry (Bärenjäger, Carlo Giacosa, Lenz Moser — fixtures in
+`tests/fixtures/`, hand-transcribed scenarios in
+`tests/test_real_cola_scenarios.py`):
+
+1. **Item numbers are not stable across form revisions.** Carlo Giacosa's
+   6/2006 revision has Brand Name at Item 5 and no "Source of Product" field;
+   later revisions have Brand Name at Item 6, and every field after a missing
+   one shifts. Extraction therefore locates fields by adjacent label text
+   ("BRAND NAME", "ALCOHOL CONTENT", "NET CONTENTS", "TYPE OF PRODUCT"),
+   never by item number — the most likely source of silent wrong answers.
+2. **Multiple labels per application are the norm.** Bärenjäger has five
+   affixed images with mandatory information scattered across them (ABV and
+   net contents on image 2, the warning on image 3, images 4–5 carrying no
+   regulated text). All affixed labels are treated as one combined set: every
+   rule asks "does this appear anywhere across the images." Per-image
+   checking would fail all three real documents. Each image's "Image Type:"
+   caption and printed dimensions are used as extraction signal.
+3. **Warning text wraps and hyphenates on real labels.** Lenz Moser breaks
+   "ALCOHOLIC BEV- / ERAGES" across a line. Before the strict comparison the
+   verbatim text is normalized — whitespace collapsed, hyphenated line breaks
+   rejoined — but case is never touched, because case sensitivity is what
+   catches a title-case "Government Warning:" violation.
+4. **All-caps warnings are approved practice.** Lenz Moser prints the entire
+   statement in capitals. 27 CFR 16.22 requires the "GOVERNMENT WARNING"
+   heading in capitals and does not forbid an all-caps body, so the strict
+   check accepts exactly two casings — the statutory mixed case, or the whole
+   statement uppercased — and fails everything else.
+5. **A free real-world regression case:** Bärenjäger's form states Alcohol
+   Content `35` while both its labels state `39% ALC / VOL` — a genuine
+   4-point form-to-label mismatch on an approved COLA. Expected output is a
+   flagged discrepancy (NEEDS REVIEW), not FAIL: cross-check mismatches go to
+   a human; only standalone CFR violations (bad warning, inconsistent proof
+   arithmetic, missing mandatory information) hard-fail.
 
 ## Performance constraint
 
