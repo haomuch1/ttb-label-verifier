@@ -180,9 +180,11 @@ Every failure path is a deliberate choice about where degradation lands:
 - **An unreadable image gets its own outcome, not a false verdict.** When
   extraction returns too little legible label content to judge (fewer than
   two distinct kinds of label text readable), the result is a dedicated
-  outcome — "Image quality too low to verify — please provide a clearer
-  copy of the label." — matching how agents actually work: the application
-  isn't rejected, a better image is requested. No audit record is written,
+  outcome — "Not enough readable label content to verify — check that a
+  clear, complete label is attached." — matching how agents actually work:
+  the application isn't rejected, a usable image is requested. (The
+  wording covers both causes honestly: a blurry photo and a filing with no
+  label attached at all.) No audit record is written,
   because no compliance verdict was rendered. A readable label with real
   problems still FAILs, and ambiguous-but-readable text still routes to
   NEEDS REVIEW; this path exists only below the readability floor.

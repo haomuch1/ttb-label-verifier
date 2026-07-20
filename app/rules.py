@@ -59,8 +59,8 @@ _LABEL_SIGNAL_FIELDS = (
 MIN_READABLE_SIGNALS = 2
 
 UNREADABLE_MESSAGE = (
-    "Image quality too low to verify — please provide a clearer copy of "
-    "the label."
+    "Not enough readable label content to verify — check that a clear, "
+    "complete label is attached."
 )
 
 

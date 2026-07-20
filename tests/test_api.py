@@ -225,7 +225,7 @@ class TestUnreadableOutcome:
         assert resp.status_code == 200
         body = resp.json()
         assert body["verdict"] == "UNREADABLE"
-        assert "clearer copy" in body["message"]
+        assert "readable label content" in body["message"]
         assert body["audit_id"] is None
         assert body["checks"] == []
         # like error items: no verdict was rendered, so no decision record
