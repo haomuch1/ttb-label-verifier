@@ -17,7 +17,8 @@ from pydantic import BaseModel
 
 from app.audit import audit_log
 from app.extractors import get_extractor
-from app.pdf import render_pdf
+from app.pdf import render_pdf, select_pages
+from app.pipeline import run_extraction
 from app.ratelimit import client_ip, limiter
 from app.rules import verify
 
@@ -64,17 +65,22 @@ def _sniff_media_type(data: bytes, declared: str | None) -> str:
     )
 
 
-def _document_images(data: bytes, media_type: str) -> list[tuple[bytes, str]]:
+def _document_images(
+    data: bytes, media_type: str
+) -> tuple[list[tuple[bytes, str]], tuple[bytes, int] | None]:
+    """Returns (images, pdf_info) — pdf_info feeds anchor detection."""
     if media_type == "application/pdf":
         try:
-            return render_pdf(data)
+            images = render_pdf(data)
+            first_page = select_pages(data)[0]
         except Exception as exc:  # poppler missing / corrupt PDF
             raise HTTPException(
                 status_code=422,
                 detail=f"Could not read the PDF ({type(exc).__name__}). "
                        "If this is a photo, upload it as an image instead.",
             ) from exc
-    return [(data, media_type)]
+        return images, (data, first_page)
+    return [(data, media_type)], None
 
 
 def _require_name(value: str, field: str) -> str:
@@ -93,12 +99,12 @@ async def _verify_one(filename: str, data: bytes, processor: str) -> dict:
         raise HTTPException(status_code=413, detail="File exceeds the 25 MB limit.")
 
     media_type = _sniff_media_type(data, None)
-    images = _document_images(data, media_type)
+    images, pdf_info = _document_images(data, media_type)
     extractor = get_extractor()
 
     start = time.perf_counter()
     try:
-        result = await extractor.extract(images)
+        result = await run_extraction(extractor, images, pdf_info)
     except HTTPException:
         raise
     except Exception as exc:

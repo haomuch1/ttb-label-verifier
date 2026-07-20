@@ -18,10 +18,10 @@ import httpx
 from PIL import Image
 
 from app.extractors.base import (
-    SYSTEM_PROMPT,
     USER_PROMPT,
     ExtractionResult,
     prepare_image,
+    system_prompt_for,
 )
 from app.models import Extraction
 
@@ -89,6 +89,59 @@ LOCAL_SUFFIX = (
 TIMEOUT_SECONDS = 600
 
 
+def _close_truncated_json(text: str, cut_at_quote: int) -> str | None:
+    """Best-effort completion of JSON cut off mid-generation.
+
+    Small models occasionally fall into a repetition loop inside one string
+    field and hit the token budget, truncating the JSON mid-string. Cut the
+    text at a quote boundary, close any open string, and append the closers
+    for whatever containers remain open.
+    """
+    idx = -1
+    for _ in range(cut_at_quote):
+        idx = text.rfind('"', 0, idx if idx >= 0 else None)
+        if idx <= 0:
+            return None
+    candidate = text[: idx + 1]
+    stack = []
+    in_string = False
+    escaped = False
+    for ch in candidate:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch in "}]" and stack:
+            stack.pop()
+    if in_string:
+        candidate += '"'
+    return candidate + "".join("}" if c == "{" else "]" for c in reversed(stack))
+
+
+def parse_extraction(content: str) -> Extraction:
+    """Validate model output, repairing truncated JSON when needed."""
+    content = content.strip()
+    try:
+        return Extraction.model_validate_json(content)
+    except Exception:
+        for cut in range(1, 9):
+            repaired = _close_truncated_json(content, cut)
+            if repaired is None:
+                break
+            try:
+                return Extraction.model_validate_json(repaired)
+            except Exception:
+                continue
+        raise
+
+
 class OllamaExtractor:
     name = "ollama"
 
@@ -119,7 +172,9 @@ class OllamaExtractor:
         img.convert("RGB").save(buf, format="PNG")
         return buf.getvalue()
 
-    async def extract(self, images: list[tuple[bytes, str]]) -> ExtractionResult:
+    async def extract(
+        self, images: list[tuple[bytes, str]], region: str | None = None
+    ) -> ExtractionResult:
         b64_images = []
         for data, media_type in images:
             data, _ = prepare_image(data, media_type)
@@ -138,18 +193,26 @@ class OllamaExtractor:
                 # (done_reason "length") once image tokens + prompt +
                 # output add up; 16384 gives comfortable headroom.
                 # repeat_penalty guards against the degenerate repetition
-                # loops small models fall into on dense form text.
-                "options": {"temperature": 0, "num_predict": 8192,
-                            "num_ctx": 16384, "repeat_penalty": 1.05},
+                # loops small models fall into on dense form text; the
+                # form region is the worst offender (dense boilerplate)
+                # and its legitimate output is small, so it gets a tight
+                # budget and a stiffer penalty.
+                "options": (
+                    {"temperature": 0, "num_predict": 1536,
+                     "num_ctx": 16384, "repeat_penalty": 1.1}
+                    if region == "form" else
+                    {"temperature": 0, "num_predict": 8192,
+                     "num_ctx": 16384, "repeat_penalty": 1.05}
+                ),
                 "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT + LOCAL_SUFFIX},
+                    {"role": "system", "content": system_prompt_for(region) + LOCAL_SUFFIX},
                     {"role": "user", "content": USER_PROMPT, "images": b64_images},
                 ],
             },
         )
         response.raise_for_status()
         body = response.json()
-        extraction = Extraction.model_validate_json(body["message"]["content"].strip())
+        extraction = parse_extraction(body["message"]["content"])
         return ExtractionResult(
             extraction=extraction,
             input_tokens=body.get("prompt_eval_count", 0),

@@ -30,11 +30,18 @@ class ExtractionResult:
 
 
 class Extractor(Protocol):
-    """One vision call in, one validated Extraction out. No chaining."""
+    """One vision call in, one validated Extraction out. No chaining.
+
+    region: None for a whole document; "form" / "labels" when the caller
+    split the page at the AFFIX-LABELS anchor and this call covers only
+    one region (see app/pipeline.py).
+    """
 
     name: str
 
-    async def extract(self, images: list[tuple[bytes, str]]) -> ExtractionResult: ...
+    async def extract(
+        self, images: list[tuple[bytes, str]], region: str | None = None
+    ) -> ExtractionResult: ...
 
 
 SYSTEM_PROMPT = """\
@@ -81,6 +88,29 @@ This is an observation about the label's presentation, not a judgment.
 """
 
 USER_PROMPT = "Extract this document into the required structure."
+
+# Appended to the system prompt when the caller split the page at the
+# "AFFIX COMPLETE SET OF LABELS BELOW" anchor and this call sees only one
+# region of it.
+REGION_HINTS = {
+    "form": (
+        "\nThis image contains ONLY the printed application form portion of "
+        "the COLA - the affixed label artwork below the form has been removed. "
+        "Extract the form fields and return an empty labels list. Keep each "
+        "*_label field to the few words of the adjacent caption only - never "
+        "transcribe surrounding form boilerplate into it."
+    ),
+    "labels": (
+        "\nThis image contains ONLY the affixed label artwork (everything "
+        "below the form's 'AFFIX COMPLETE SET OF LABELS BELOW' line) - the "
+        "form portion has been removed. Return null for the form and one "
+        "entry per affixed label image."
+    ),
+}
+
+
+def system_prompt_for(region: str | None) -> str:
+    return SYSTEM_PROMPT + (REGION_HINTS.get(region, "") if region else "")
 
 
 def prepare_image(data: bytes, media_type: str) -> tuple[bytes, str]:

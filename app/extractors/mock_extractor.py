@@ -118,7 +118,9 @@ _CANNED = [_BARENJAGER, _CARLO_GIACOSA, _LENZ_MOSER]
 class MockExtractor:
     name = "mock"
 
-    async def extract(self, images: list[tuple[bytes, str]]) -> ExtractionResult:
+    async def extract(
+        self, images: list[tuple[bytes, str]], region: str | None = None
+    ) -> ExtractionResult:
         await asyncio.sleep(0.05)  # keep async paths honest
         digest = hashlib.sha256(images[0][0]).digest()
         extraction = _CANNED[digest[0] % len(_CANNED)]

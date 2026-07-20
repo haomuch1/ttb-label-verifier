@@ -180,6 +180,29 @@ Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
   text still FAIL. Net effect: the weaker the model, the higher the triage
   rate — never silently wrong PASSes from the warning check. The batch UI
   reports the auto-clear rate so the labor-saving claim is measured.
+- **Two-region extraction (the fix that followed the diagnosis).** Every
+  Form 5100.31 prints "AFFIX COMPLETE SET OF LABELS BELOW" between the
+  form and the affixed artwork. The page is split at that anchor (PDFs:
+  text-layer coordinates via pypdf; images: OCR via tesseract) and the
+  two regions are extracted concurrently, each getting the full
+  image-token budget at higher effective resolution; results merge into
+  the same Extraction schema. If the anchor isn't found or either call
+  fails, the app falls back to the single whole-page call — the split is
+  an enhancement over the baseline, never a replacement that can break
+  it. Measured effect on the three fixtures whose warnings previously
+  failed as unreadable: Eaglemount's warning went from absent to
+  **verbatim (PASS)**; Carlo Giacosa's and Bärenjäger's went from
+  garbled hard-FAILs to 96%-similar NEEDS_REVIEW near-misses;
+  Bärenjäger's five label images were separated correctly for the first
+  time, with the warning attributed to one label instead of bleeding
+  across three. Wall-clock ran 6.7–9.2s per document — roughly the
+  slower region, not the sum (concurrent calls measured against
+  sequential: 6.7s vs 12.3s summed on Carlo Giacosa). Honest trade-off
+  also observed: removing the form region ended form-to-label bleed,
+  which had been masking genuinely hard label print — Eaglemount's tiny
+  front-label ABV line is now missed rather than back-filled from the
+  form, and diacritics/spacing in form brand names got slightly worse on
+  two fixtures (routed to NEEDS_REVIEW, not wrong answers).
 - **Two Ollama-specific engineering notes** encoded in
   `app/extractors/ollama_extractor.py`: pydantic's `anyOf`-style JSON
   schemas silently produce empty output from Ollama's grammar engine (the

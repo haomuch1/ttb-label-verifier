@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.extractors import get_extractor  # noqa: E402
+from app.pipeline import run_extraction  # noqa: E402
 from app.rules import verify  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures"
@@ -34,7 +35,7 @@ async def run(extractor, name: str) -> tuple[int, int]:
     print(f"\n{'=' * 70}\n{name}  (extractor: {extractor.name})\n{'=' * 70}")
     images = fixture_images(name)
     start = time.perf_counter()
-    result = await extractor.extract(images)
+    result = await run_extraction(extractor, images)
     elapsed = time.perf_counter() - start
     print(f"--- extraction call: {elapsed:.2f}s | "
           f"tokens in={result.input_tokens} out={result.output_tokens} ---")

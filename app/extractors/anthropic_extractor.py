@@ -6,10 +6,10 @@ import os
 from anthropic import AsyncAnthropic
 
 from app.extractors.base import (
-    SYSTEM_PROMPT,
     USER_PROMPT,
     ExtractionResult,
     prepare_image,
+    system_prompt_for,
 )
 from app.models import Extraction
 
@@ -33,7 +33,9 @@ class AnthropicExtractor:
             self._client = AsyncAnthropic()
         return self._client
 
-    async def extract(self, images: list[tuple[bytes, str]]) -> ExtractionResult:
+    async def extract(
+        self, images: list[tuple[bytes, str]], region: str | None = None
+    ) -> ExtractionResult:
         content = []
         for data, media_type in images:
             data, media_type = prepare_image(data, media_type)
@@ -50,7 +52,7 @@ class AnthropicExtractor:
         response = await self.client.messages.parse(
             model=self.model,
             max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT,
+            system=system_prompt_for(region),
             messages=[{"role": "user", "content": content}],
             output_format=Extraction,
         )

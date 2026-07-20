@@ -1,7 +1,9 @@
 FROM python:3.12-slim
 
-# poppler-utils is required by pdf2image for server-side PDF rendering
-RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils \
+# poppler-utils: pdf2image page rendering; tesseract-ocr: locating the
+# "AFFIX COMPLETE SET OF LABELS BELOW" anchor for two-region extraction
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    poppler-utils tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
