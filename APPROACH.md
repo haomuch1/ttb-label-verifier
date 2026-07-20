@@ -408,3 +408,30 @@ fans out concurrently with `asyncio.gather` under a semaphore.
   without touching the rule engine.
 - Verdicts are advisory: NEEDS REVIEW exists precisely because a human agent
   makes the final call.
+
+## Independent review
+
+After the build was complete, the codebase was audited by a separate model
+(Claude Opus 4.8) in a fresh session with no knowledge of the build
+history — a cold read, to surface what the builder had become blind to. The
+audit was scoped to three things only: correctness bugs that could produce a
+wrong verdict, security issues relevant to public deployment, and
+inconsistencies between the documentation and the code.
+
+The review found no critical issues and confirmed the core compliance engine
+is sound — it could not produce a false PASS on a violating label; the strict
+government-warning comparison correctly FAILs title-case and dropped-clause
+violations and does not pass garbled text; the fuzzy brand and net-contents
+matching does not pass genuinely different values; and the two-region split
+degrades safely to whole-page extraction on any failure. Secrets posture,
+input handling, and the frontend (no XSS surface) were confirmed clean.
+
+The actionable findings were deployment-hardening items and
+documentation-accuracy corrections, all since addressed: the rate limiter was
+hardened against spoofed `X-Forwarded-For` headers and unbounded key growth;
+upload body size and PDF page count were capped to prevent memory exhaustion
+on the public instance; and three documentation sentences that overstated the
+missing-heading warning behavior as a hard FAIL were corrected to describe the
+actual behavior (a missing heading on otherwise-verbatim text routes to NEEDS
+REVIEW). The unauthenticated audit view is documented as an intentional
+prototype simplification that production would gate behind Treasury SSO.
