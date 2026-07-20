@@ -21,3 +21,6 @@ htmlcov/
 
 # Local notes (never commit — has contained credentials)
 US GOV AI-Powered Alcohol label verify/
+
+# Local demo staging
+samples/

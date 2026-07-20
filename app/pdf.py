@@ -13,9 +13,14 @@ dev boxes install poppler or test with image uploads instead).
 """
 
 import io
+import os
 
 from pdf2image import convert_from_bytes
 from pypdf import PdfReader
+
+# Where poppler's binaries live when they're not on PATH (typical on
+# Windows dev boxes; the Docker image has them on PATH).
+POPPLER_PATH = os.environ.get("POPPLER_PATH") or None
 
 # Unique to the form page itself (page 1 of every revision examined).
 FORM_MARKERS = [
@@ -70,7 +75,8 @@ def render_pdf(pdf_bytes: bytes) -> list[tuple[bytes, str]]:
     images = []
     for page_no in pages:
         rendered = convert_from_bytes(
-            pdf_bytes, dpi=RENDER_DPI, first_page=page_no, last_page=page_no
+            pdf_bytes, dpi=RENDER_DPI, first_page=page_no, last_page=page_no,
+            poppler_path=POPPLER_PATH,
         )
         buf = io.BytesIO()
         rendered[0].save(buf, format="PNG")
