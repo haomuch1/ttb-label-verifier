@@ -42,8 +42,10 @@ fails):
 
 **Standalone compliance** (label alone against the CFR):
 - Government health warning — strict comparison against the statutory text
-  of 27 CFR 16.21 (near-miss transcriptions route to NEEDS REVIEW; structural
-  violations like a missing heading or title case FAIL)
+  of 27 CFR 16.21. Title case, dropped numbered clauses, and garbled/altered
+  wording FAIL; a near-miss transcription (≥90% similar to the statute,
+  e.g. otherwise-verbatim text with only the "GOVERNMENT WARNING:" heading
+  missing) routes to NEEDS REVIEW for human verification.
 - Alcohol content present; proof internally consistent (proof = 2 × ABV)
 - Net contents present
 - Class/type designation present
@@ -165,11 +167,12 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-124 tests, all offline (the mock backend): normalization edge cases
+137 tests, all offline (the mock backend): normalization edge cases
 (wrapped/hyphenated warning text, case preservation, diacritics, net-content
 quantities), the rules engine, hand-transcribed scenarios of the real COLAs
-above, PDF page classification, the region-split pipeline with its
-fallbacks, the API surface, rate limiting, and the audit trail.
+above, PDF page classification and the page cap, the region-split pipeline
+with its fallbacks, the API surface, rate limiting (including spoofed
+X-Forwarded-For and the request-body cap), and the audit trail.
 
 ## Rate limits
 

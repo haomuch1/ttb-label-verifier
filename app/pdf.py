@@ -38,6 +38,12 @@ INSTRUCTION_MARKERS = [
 
 RENDER_DPI = 150
 
+# Cap on pages rendered and sent to the model from one PDF. A real COLA is
+# a handful of pages; this stops a crafted many-page PDF (small on disk,
+# huge once every page is rendered to a 150-DPI PNG) from exhausting memory
+# or fanning out unbounded work to the inference backend.
+MAX_RENDERED_PAGES = int(os.environ.get("MAX_PDF_PAGES", "12"))
+
 
 def _normalize(text: str) -> str:
     return " ".join(text.split()).lower()
@@ -70,8 +76,12 @@ def select_pages(pdf_bytes: bytes) -> list[int]:
 
 
 def render_pdf(pdf_bytes: bytes) -> list[tuple[bytes, str]]:
-    """Render the non-instruction pages to PNGs for the extractor."""
-    pages = select_pages(pdf_bytes)
+    """Render the non-instruction pages to PNGs for the extractor.
+
+    At most MAX_RENDERED_PAGES pages are rendered; a PDF with more
+    surviving pages is truncated to that cap.
+    """
+    pages = select_pages(pdf_bytes)[:MAX_RENDERED_PAGES]
     images = []
     for page_no in pages:
         rendered = convert_from_bytes(

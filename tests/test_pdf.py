@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from app.pdf import is_instruction_page, select_pages
+import app.pdf as pdf_module
+from app.pdf import MAX_RENDERED_PAGES, is_instruction_page, render_pdf, select_pages
 
 BLANK_FORM = Path(__file__).parent / "fixtures" / "blank-form-5100-31-2023-04.pdf"
 
@@ -39,6 +40,30 @@ class TestIsInstructionPage:
 
     def test_label_artwork_page_kept(self):
         assert not is_instruction_page("Image Type: Brand (front) or keg collar")
+
+
+class TestPageCap:
+    def test_render_pdf_caps_page_count(self, monkeypatch):
+        # A crafted PDF whose surviving pages exceed the cap must be
+        # truncated, so it can't fan out unbounded rendering / inference.
+        many_pages = list(range(1, MAX_RENDERED_PAGES + 20))
+        monkeypatch.setattr(pdf_module, "select_pages", lambda _b: many_pages)
+
+        rendered_pages = []
+
+        class FakeImage:
+            def save(self, buf, format):
+                buf.write(b"\x89PNG\r\n\x1a\n")
+
+        def fake_convert(_bytes, dpi, first_page, last_page, poppler_path):
+            rendered_pages.append(first_page)
+            return [FakeImage()]
+
+        monkeypatch.setattr(pdf_module, "convert_from_bytes", fake_convert)
+
+        images = render_pdf(b"%PDF-fake")
+        assert len(images) == MAX_RENDERED_PAGES
+        assert len(rendered_pages) == MAX_RENDERED_PAGES
 
 
 @pytest.mark.skipif(not BLANK_FORM.exists(), reason="blank form fixture missing")

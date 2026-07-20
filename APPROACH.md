@@ -116,8 +116,10 @@ Public COLA Registry (Bärenjäger, Carlo Giacosa, Lenz Moser — fixtures in
 4. **All-caps warnings are approved practice.** Lenz Moser prints the entire
    statement in capitals. 27 CFR 16.22 requires the "GOVERNMENT WARNING"
    heading in capitals and does not forbid an all-caps body, so the strict
-   check accepts exactly two casings — the statutory mixed case, or the whole
-   statement uppercased — and fails everything else.
+   check accepts two casings of the complete verbatim statement — the
+   statutory mixed case, or the whole statement uppercased — while a
+   title-case rendering (Jenny Park's rejected case) FAILs. Deviations that
+   are not pure casing follow the near-miss tiering described below.
 5. **A free real-world regression case:** Bärenjäger's form states Alcohol
    Content `35` while both its labels state `39% ALC / VOL` — a genuine
    4-point form-to-label mismatch on an approved COLA. Expected output is a
@@ -212,6 +214,11 @@ record of who decided what is incomplete.
 **Lightweight identity, not real auth.** The agent enters a name before
 processing. No passwords or accounts — this is a deliberately minimal
 stand-in that stamps the audit trail; production would use Treasury SSO.
+Consistent with this "stamps, not authentication" stance, the audit view
+(`GET /api/audit`) and the attestation endpoint (`POST /api/audit/{id}/review`)
+are themselves unauthenticated in this prototype — a production deployment
+would gate both behind Treasury SSO. The in-memory store holds only names,
+filenames, and verdicts: no PII and no application content.
 
 **Two-name attestation.** Sign-off requires re-entering a name — a
 conscious "I reviewed this" act, not a passive click. The button reads
@@ -261,10 +268,13 @@ Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
 - **Consequence for verdict design:** the rules engine treats a warning
   transcription that is ≥90% similar to the statutory text but not exact
   as NEEDS REVIEW rather than FAIL — plausible transcription error routes
-  to a human instead of becoming a wrong answer. Structural violations
-  (missing heading, missing numbered clauses, title case) and low-similarity
-  text still FAIL. Net effect: the weaker the model, the higher the triage
-  rate — never silently wrong PASSes from the warning check. The batch UI
+  to a human instead of becoming a wrong answer. Title case, dropped
+  numbered clauses, and garbled/altered (low-similarity) text still FAIL;
+  an otherwise-verbatim statement missing only the "GOVERNMENT WARNING:"
+  heading stays above the similarity floor and routes to NEEDS REVIEW for
+  human verification, consistent with the near-miss philosophy. Net effect:
+  the weaker the model, the higher the triage rate — never silently wrong
+  PASSes from the warning check. The batch UI
   reports the auto-clear rate so the labor-saving claim is measured.
 - **Two-region extraction (the fix that followed the diagnosis).** Every
   Form 5100.31 prints "AFFIX COMPLETE SET OF LABELS BELOW" between the

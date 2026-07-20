@@ -9,7 +9,7 @@ from PIL import Image
 
 from app.audit import audit_log
 from app.main import app
-from app.ratelimit import limiter
+from app.ratelimit import RateLimiter, client_ip, limiter
 
 
 @pytest.fixture(autouse=True)
@@ -123,6 +123,68 @@ class TestRateLimiting:
         files = [("files", (f"d{i}.png", png_bytes(i), "image/png")) for i in range(4)]
         resp = client.post("/api/verify/batch", files=files, data={"processor": "Test Agent"})
         assert resp.status_code == 429
+
+    def test_spoofed_leftmost_xff_cannot_evade_per_ip_limit(self, client, monkeypatch):
+        # An attacker rotates the client-supplied (leftmost) X-Forwarded-For
+        # value every request; the trusted proxy still appends the real
+        # client IP on the right. Keying on the trusted hop means all three
+        # land in the same bucket, so the third is blocked.
+        monkeypatch.setattr(limiter, "per_ip_per_minute", 2)
+        real = "203.0.113.7"
+        codes = []
+        for i in range(3):
+            resp = client.post(
+                "/api/verify",
+                files={"file": (f"f{i}.png", png_bytes(i), "image/png")},
+                data={"processor": "Test Agent"},
+                headers={"X-Forwarded-For": f"9.9.9.{i}, {real}"},
+            )
+            codes.append(resp.status_code)
+        assert codes == [200, 200, 429]
+
+
+class TestClientIpTrustedHop:
+    def _request(self, xff=None, host="10.0.0.1"):
+        from starlette.requests import Request
+        headers = []
+        if xff is not None:
+            headers.append((b"x-forwarded-for", xff.encode()))
+        return Request({"type": "http", "headers": headers, "client": (host, 5000)})
+
+    def test_uses_rightmost_trusted_hop_not_leftmost(self):
+        assert client_ip(self._request("1.1.1.1, 2.2.2.2, 203.0.113.9")) == "203.0.113.9"
+
+    def test_no_forwarded_header_falls_back_to_peer(self):
+        assert client_ip(self._request(None, host="198.51.100.4")) == "198.51.100.4"
+
+
+class TestRateLimiterEviction:
+    def test_stale_ip_buckets_are_evicted_under_pressure(self, monkeypatch):
+        import app.ratelimit as rl
+        monkeypatch.setattr(rl, "MAX_TRACKED_IPS", 5)
+        rlim = RateLimiter(per_ip_per_minute=100, daily_cap=100000)
+        # Simulate many distinct IPs whose windows have long expired.
+        for i in range(50):
+            rlim.check(f"192.0.2.{i}")
+        # Age every existing entry out of the window, then one more check
+        # crosses the cap and triggers the stale sweep.
+        for window in rlim._per_ip.values():
+            window[-1] -= 10_000
+        rlim.check("198.51.100.1")
+        assert len(rlim._per_ip) <= rl.MAX_TRACKED_IPS
+
+
+class TestBodySizeLimit:
+    def test_oversized_request_rejected_from_content_length(self, client, monkeypatch):
+        import app.main as main
+        monkeypatch.setattr(main, "MAX_REQUEST_BYTES", 50)  # bytes
+        resp = client.post(
+            "/api/verify",
+            files={"file": ("a.png", png_bytes(), "image/png")},
+            data={"processor": "Test Agent"},
+        )
+        assert resp.status_code == 413
+        assert "limit" in resp.json()["detail"].lower()
 
 
 class TestAudit:

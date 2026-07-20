@@ -7,11 +7,12 @@ persisted.
 
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -38,7 +39,36 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_BATCH_FILES = 20
 BATCH_CONCURRENCY = 4
 
+# Whole-request body cap, enforced from the Content-Length header BEFORE the
+# body is read into memory. Bounds a single upload plus a modest batch
+# (multipart overhead included) and stops an oversized POST from exhausting
+# the free instance's ~512 MB RAM before the per-file check ever runs.
+MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(50 * 1024 * 1024)))
+
 IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+@app.middleware("http")
+async def limit_request_body(request: Request, call_next):
+    """Reject an oversized request from its declared Content-Length before
+    any of the body is read."""
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared = int(content_length)
+        except ValueError:
+            declared = None
+        if declared is not None and declared > MAX_REQUEST_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "detail": (
+                        f"Request body exceeds the "
+                        f"{MAX_REQUEST_BYTES // (1024 * 1024)} MB limit."
+                    )
+                },
+            )
+    return await call_next(request)
 
 
 @app.get("/health")
