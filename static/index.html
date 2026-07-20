@@ -12,7 +12,7 @@
     max-width: 900px; margin: 0 auto; padding: 1rem 1rem 4rem;
     background: #fff;
   }
-  h1 { font-size: 1.7rem; margin: .5rem 0 .25rem; }
+  h1 { font-size: 1.7rem; margin: .5rem 0 1rem; text-align: center; }
   h2 { font-size: 1.3rem; margin: 1.25rem 0 .5rem; }
   .sub { color: #444; margin: 0 0 1rem; }
 
@@ -117,11 +117,9 @@
 </head>
 <body>
   <h1>TTB Label Verifier</h1>
-  <p class="sub">Check COLA applications (Form 5100.31) and label images against the labeling rules.
-     Every item gets one answer: <strong>PASS</strong>, <strong>NEEDS REVIEW</strong>, or <strong>FAIL</strong>.</p>
 
   <nav class="nav" aria-label="What do you want to do?">
-    <button id="nav-process" aria-pressed="true">Process a form
+    <button id="nav-process" aria-pressed="false">Process a form
       <span class="small">Check one COLA application</span></button>
     <button id="nav-batch" aria-pressed="false">Batch process
       <span class="small">Check many files at once</span></button>
@@ -130,7 +128,7 @@
   </nav>
 
   <!-- ============ PROCESS ONE ============ -->
-  <section id="view-process" class="view active">
+  <section id="view-process" class="view">
     <div class="field">
       <label for="name-one">Your name or ID</label>
       <input type="text" id="name-one" class="agent-name" autocomplete="name"
