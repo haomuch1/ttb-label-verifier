@@ -1,22 +1,247 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TTB Label Verifier</title>
-  <style>
-    body {
-      font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 2rem 1rem;
-      color: #1a1a1a;
-    }
-    h1 { font-size: 1.75rem; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TTB Label Verifier</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    font-size: 18px; line-height: 1.5; color: #111;
+    max-width: 860px; margin: 0 auto; padding: 1rem 1rem 4rem;
+    background: #fff;
+  }
+  h1 { font-size: 1.7rem; margin: .5rem 0 .25rem; }
+  .sub { color: #444; margin: 0 0 1.25rem; }
+
+  .buttons { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.5rem; }
+  .big-btn {
+    flex: 1 1 220px; display: block; text-align: center; cursor: pointer;
+    padding: 1.1rem 1rem; font-size: 1.15rem; font-weight: 700;
+    background: #0b4f8a; color: #fff; border: 3px solid #083a66; border-radius: 10px;
+  }
+  .big-btn:hover, .big-btn:focus-within { background: #0d5ea6; }
+  .big-btn input { display: none; }
+
+  #status { font-size: 1.2rem; font-weight: 600; margin: 1rem 0; min-height: 1.5em; }
+
+  .band {
+    display: none; padding: 1.4rem 1rem; margin: 1rem 0; border-radius: 12px;
+    text-align: center; border: 4px solid transparent;
+  }
+  .band .word { font-size: 3.4rem; font-weight: 900; letter-spacing: .03em; display: block; }
+  .band .meaning { font-size: 1.25rem; font-weight: 600; display: block; margin-top: .3rem; }
+  .band.pass { background: #1a7f37; color: #fff; display: block; }
+  .band.review { background: #ffd33d; color: #111; border-color: #9a6700; display: block; }
+  .band.fail { background: #b91c1c; color: #fff; display: block; }
+
+  .checks { margin: 0; padding: 0; list-style: none; }
+  .checks li {
+    display: flex; gap: .8rem; align-items: baseline;
+    padding: .7rem .4rem; border-bottom: 1px solid #ddd;
+  }
+  .chip {
+    flex: 0 0 8.5rem; text-align: center; font-weight: 800; font-size: .95rem;
+    padding: .25rem .3rem; border-radius: 6px;
+  }
+  .chip.PASS { background: #d7efdd; color: #0f5223; }
+  .chip.NEEDS_REVIEW { background: #fff3bf; color: #6b4a00; }
+  .chip.FAIL { background: #fadadb; color: #7d1214; }
+  .chip.NOT_APPLICABLE { background: #eee; color: #666; }
+  .check-name { font-weight: 700; }
+  .check-detail { color: #333; }
+  .meta { color: #555; font-size: .95rem; margin-top: .75rem; }
+
+  #batch-summary {
+    display: none; padding: 1rem; margin: 1rem 0; border-radius: 10px;
+    background: #eef4fb; border: 2px solid #0b4f8a; font-size: 1.2rem; font-weight: 700;
+  }
+  table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
+  th, td { text-align: left; padding: .55rem .4rem; border-bottom: 1px solid #ddd; }
+  th { font-size: .95rem; color: #444; }
+  td .chip { display: inline-block; min-width: 8rem; }
+  .err { color: #b91c1c; font-weight: 700; }
+  section h2 { font-size: 1.25rem; margin: 1.5rem 0 .5rem; }
+</style>
 </head>
 <body>
   <h1>TTB Label Verifier</h1>
-  <p>Upload interface coming soon. Service is running &mdash; see <a href="/health">/health</a>.</p>
+  <p class="sub">Check a COLA application (Form 5100.31) or a photo of a label.
+     You will get one answer: <strong>PASS</strong>, <strong>NEEDS REVIEW</strong>, or <strong>FAIL</strong>.</p>
+
+  <div class="buttons">
+    <label class="big-btn">Check a PDF or image
+      <input type="file" id="file-one" accept=".pdf,image/*">
+    </label>
+    <label class="big-btn">Take a photo
+      <input type="file" id="file-camera" accept="image/*" capture="environment">
+    </label>
+    <label class="big-btn">Check many files
+      <input type="file" id="file-batch" accept=".pdf,image/*" multiple>
+    </label>
+  </div>
+
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <div id="band" class="band">
+    <span class="word" id="band-word"></span>
+    <span class="meaning" id="band-meaning"></span>
+  </div>
+
+  <section id="detail" style="display:none">
+    <h2>What was checked</h2>
+    <ul class="checks" id="checks"></ul>
+    <p class="meta" id="meta"></p>
+  </section>
+
+  <div id="batch-summary"></div>
+  <section id="batch" style="display:none">
+    <h2>Results</h2>
+    <table>
+      <thead><tr><th>File</th><th>Answer</th><th>Details</th></tr></thead>
+      <tbody id="batch-rows"></tbody>
+    </table>
+  </section>
+
+<script>
+const BAND_TEXT = {
+  "PASS": ["PASS", "This label meets every check.", "pass"],
+  "NEEDS_REVIEW": ["NEEDS REVIEW", "Nothing failed, but a person should look at this one.", "review"],
+  "FAIL": ["FAIL", "This label has a problem. See below.", "fail"],
+};
+const CHIP_TEXT = {
+  "PASS": "PASS", "NEEDS_REVIEW": "NEEDS REVIEW",
+  "FAIL": "FAIL", "NOT_APPLICABLE": "Not checked",
+};
+
+const $ = (id) => document.getElementById(id);
+
+function resetViews() {
+  $("band").className = "band";
+  $("detail").style.display = "none";
+  $("batch").style.display = "none";
+  $("batch-summary").style.display = "none";
+  $("batch-rows").innerHTML = "";
+  $("checks").innerHTML = "";
+}
+
+function showResult(r) {
+  const [word, meaning, cls] = BAND_TEXT[r.verdict] || ["?", "", ""];
+  $("band-word").textContent = word;
+  $("band-meaning").textContent = meaning;
+  $("band").className = "band " + cls;
+  const list = $("checks");
+  for (const c of r.checks) {
+    const li = document.createElement("li");
+    const chip = document.createElement("span");
+    chip.className = "chip " + c.verdict;
+    chip.textContent = CHIP_TEXT[c.verdict] || c.verdict;
+    const text = document.createElement("span");
+    const name = document.createElement("span");
+    name.className = "check-name";
+    name.textContent = c.name + ". ";
+    const detail = document.createElement("span");
+    detail.className = "check-detail";
+    detail.textContent = c.detail;
+    text.append(name, detail);
+    li.append(chip, text);
+    list.append(li);
+  }
+  $("meta").textContent =
+    `Checked in ${r.seconds} seconds` +
+    (r.cfr_part ? ` — governed by ${r.cfr_part}` : "") +
+    (r.model ? ` — model: ${r.model}` : "");
+  $("detail").style.display = "block";
+}
+
+async function verifyOne(file) {
+  resetViews();
+  $("status").textContent = "Checking " + file.name + " …";
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const resp = await fetch("/api/verify", { method: "POST", body: form });
+    const body = await resp.json();
+    if (!resp.ok) throw new Error(body.detail || resp.statusText);
+    $("status").textContent = "";
+    showResult(body);
+  } catch (e) {
+    $("status").textContent = "Sorry — " + e.message;
+  }
+}
+
+async function verifyBatch(files) {
+  resetViews();
+  $("batch").style.display = "block";
+  $("status").textContent = `Checking ${files.length} files …`;
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  let done = 0, review = 0, failed = 0;
+  try {
+    const resp = await fetch("/api/verify/batch", { method: "POST", body: form });
+    if (!resp.ok) {
+      const body = await resp.json();
+      throw new Error(body.detail || resp.statusText);
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done: eof } = await reader.read();
+      if (eof) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        const r = JSON.parse(line);
+        addBatchRow(r);
+        done += 1;
+        if (r.error || r.verdict === "FAIL") failed += 1;
+        else if (r.verdict === "NEEDS_REVIEW") review += 1;
+        $("status").textContent = `Checked ${done} of ${files.length} …`;
+      }
+    }
+    $("status").textContent = "";
+    const cleared = done - review - failed;
+    const pct = done ? Math.round((cleared / done) * 100) : 0;
+    $("batch-summary").textContent =
+      `${cleared} of ${done} cleared automatically (${pct}%). ` +
+      `${review} need a person to review. ${failed} failed or had errors.`;
+    $("batch-summary").style.display = "block";
+  } catch (e) {
+    $("status").textContent = "Sorry — " + e.message;
+  }
+}
+
+function addBatchRow(r) {
+  const tr = document.createElement("tr");
+  const name = document.createElement("td");
+  name.textContent = r.filename;
+  const answer = document.createElement("td");
+  const detail = document.createElement("td");
+  if (r.error) {
+    answer.innerHTML = '<span class="err">ERROR</span>';
+    detail.textContent = r.error;
+  } else {
+    const chip = document.createElement("span");
+    chip.className = "chip " + r.verdict;
+    chip.textContent = CHIP_TEXT[r.verdict] || r.verdict;
+    answer.append(chip);
+    const flagged = r.checks.filter(c => c.verdict === "FAIL" || c.verdict === "NEEDS_REVIEW");
+    detail.textContent = flagged.length
+      ? flagged.map(c => c.name).join("; ")
+      : "All checks passed";
+  }
+  tr.append(name, answer, detail);
+  $("batch-rows").append(tr);
+}
+
+$("file-one").addEventListener("change", e => e.target.files[0] && verifyOne(e.target.files[0]));
+$("file-camera").addEventListener("change", e => e.target.files[0] && verifyOne(e.target.files[0]));
+$("file-batch").addEventListener("change", e => e.target.files.length && verifyBatch([...e.target.files]));
+</script>
 </body>
 </html>

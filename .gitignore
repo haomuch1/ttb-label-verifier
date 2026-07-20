@@ -18,3 +18,6 @@ Thumbs.db
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Local notes (never commit — has contained credentials)
+US GOV AI-Powered Alcohol label verify/

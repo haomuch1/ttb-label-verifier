@@ -5,5 +5,14 @@ services:
     plan: free
     healthCheckPath: /health
     envVars:
+      # The free tier can't host a local model, so the public demo uses the
+      # Anthropic backend; inside a locked-down network set EXTRACTOR=ollama
+      # and point OLLAMA_URL at a self-hosted server instead.
+      - key: EXTRACTOR
+        value: anthropic
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: RATE_LIMIT_PER_IP_PER_MIN
+        value: "12"
+      - key: RATE_LIMIT_DAILY_CAP
+        value: "300"

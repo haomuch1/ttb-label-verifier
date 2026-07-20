@@ -1,44 +1,40 @@
-"""The single Claude vision call. The model extracts; app/rules.py judges.
+"""Extractor interface: the boundary between inference and judgment.
 
-One request per document, no chaining — the 5-second budget allows exactly
-one round trip. The response is structured JSON validated against the
-Extraction schema; it contains verbatim text and observations only, never
-verdicts. The inference call is isolated behind extract() so the backend
-can be swapped (e.g. for self-hosted inference inside the Treasury
-network) without touching the rules engine.
+Every backend implements the same contract — take document images, return
+a validated Extraction (verbatim text and observations, never verdicts).
+The rules engine neither knows nor cares which model produced the
+extraction. This is a first-class architecture decision: production
+inside the Treasury network (which blocks most outbound ML endpoints)
+runs the same app against self-hosted inference by changing one env var.
 """
 
-import base64
 import io
-import os
+from dataclasses import dataclass
+from typing import Protocol
 
-from anthropic import AsyncAnthropic
-from dotenv import load_dotenv
 from PIL import Image
 
 from app.models import Extraction
 
-load_dotenv()
-
-# Default chosen for the hard <5s warm-latency requirement (a prior vendor
-# pilot died at 30-40s). claude-haiku-4-5 is the fastest current model and
-# supports both vision and structured outputs; override via EXTRACTION_MODEL
-# to trade latency for accuracy (e.g. claude-opus-4-8).
-MODEL = os.environ.get("EXTRACTION_MODEL", "claude-haiku-4-5")
-MAX_TOKENS = 4096
-
-# API limits: ~5MB per image, 8000px max dimension.
+# API-safe image bounds (Anthropic: ~5MB / 8000px; also sane for Ollama).
 MAX_DIMENSION = 7900
 MAX_BYTES = 4_500_000
 
-_client: AsyncAnthropic | None = None
+
+@dataclass
+class ExtractionResult:
+    extraction: Extraction
+    input_tokens: int   # 0 when the backend doesn't report usage
+    output_tokens: int
+    model: str
 
 
-def get_client() -> AsyncAnthropic:
-    global _client
-    if _client is None:
-        _client = AsyncAnthropic()
-    return _client
+class Extractor(Protocol):
+    """One vision call in, one validated Extraction out. No chaining."""
+
+    name: str
+
+    async def extract(self, images: list[tuple[bytes, str]]) -> ExtractionResult: ...
 
 
 SYSTEM_PROMPT = """\
@@ -84,9 +80,11 @@ presents as (wine / distilled_spirits / malt_beverage), or null if unclear. \
 This is an observation about the label's presentation, not a judgment.
 """
 
+USER_PROMPT = "Extract this document into the required structure."
+
 
 def prepare_image(data: bytes, media_type: str) -> tuple[bytes, str]:
-    """Downscale/re-encode only if the image exceeds API limits."""
+    """Downscale/re-encode only if the image exceeds backend limits."""
     if len(data) <= MAX_BYTES:
         img = Image.open(io.BytesIO(data))
         if max(img.size) <= MAX_DIMENSION:
@@ -98,36 +96,3 @@ def prepare_image(data: bytes, media_type: str) -> tuple[bytes, str]:
     buf = io.BytesIO()
     img.convert("RGB").save(buf, format="JPEG", quality=85)
     return buf.getvalue(), "image/jpeg"
-
-
-async def extract(images: list[tuple[bytes, str]]) -> Extraction:
-    """Run the single vision call over a document's page/label images.
-
-    images: list of (bytes, media_type) covering the whole document —
-    rendered PDF pages or uploaded photos. Returns the validated
-    Extraction; raises anthropic errors upward for the caller to map.
-    """
-    content = []
-    for data, media_type in images:
-        data, media_type = prepare_image(data, media_type)
-        content.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": media_type,
-                "data": base64.standard_b64encode(data).decode(),
-            },
-        })
-    content.append({
-        "type": "text",
-        "text": "Extract this document into the required structure.",
-    })
-
-    response = await get_client().messages.parse(
-        model=MODEL,
-        max_tokens=MAX_TOKENS,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": content}],
-        output_format=Extraction,
-    )
-    return response.parsed_output

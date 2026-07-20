@@ -41,11 +41,48 @@ Requires Python 3.11+.
 python -m venv .venv
 # Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # then put your Anthropic API key in .env
 uvicorn app.main:app --reload
 ```
 
 Open http://127.0.0.1:8000 — health check at http://127.0.0.1:8000/health.
+
+### Choosing an inference backend
+
+Extraction runs behind a pluggable interface. Pick with `EXTRACTOR`:
+
+| `EXTRACTOR` | Needs | Use for |
+|---|---|---|
+| `ollama` (default) | A local [Ollama](https://ollama.com) server | No key, no account, no cost, no network egress |
+| `anthropic` | `ANTHROPIC_API_KEY` (put it in `.env`) | Fastest/most accurate; used by the cloud demo |
+| `mock` | Nothing | UI/dev/testing with zero API calls |
+
+**Ollama setup (fully local, free):**
+
+```bash
+# 1. Install Ollama: https://ollama.com/download (Windows/macOS/Linux)
+# 2. Pull a vision model:
+ollama pull qwen3-vl:8b
+# 3. Run the app against it:
+EXTRACTOR=ollama OLLAMA_MODEL=qwen3-vl:8b uvicorn app.main:app --reload
+```
+
+Recommended model: **`qwen3-vl:8b`** — the Qwen VL family is the strongest
+open-weight line for document OCR and dense text transcription at a size
+that runs on a single consumer GPU (or CPU, slowly), which is exactly this
+workload: reading small print on forms and labels. If it's too heavy for
+your machine, `qwen2.5vl:7b` or `qwen3-vl:4b` are the fallbacks; expect
+transcription quality to drop with size.
+
+**PDF uploads** additionally require [poppler](https://poppler.freedesktop.org/)
+(`pdftoppm`) on PATH for page rendering — preinstalled in the Docker image;
+on Windows/macOS dev boxes install it separately or test with image uploads.
+
+### Rate limits
+
+Public deployments are protected by an in-memory per-IP limit
+(`RATE_LIMIT_PER_IP_PER_MIN`, default 12/min) and a daily instance cap
+(`RATE_LIMIT_DAILY_CAP`, default 300 verifications/day). Counters reset on
+restart; nothing is persisted.
 
 ## Tests
 

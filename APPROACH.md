@@ -74,6 +74,48 @@ Public COLA Registry (Bärenjäger, Carlo Giacosa, Lenz Moser — fixtures in
    a human; only standalone CFR violations (bad warning, inconsistent proof
    arithmetic, missing mandatory information) hard-fail.
 
+## Pluggable inference backends — a first-class design decision
+
+Extraction sits behind a small interface (`app/extractors/`): every backend
+takes document images and returns the same validated `Extraction` schema
+under the same transcribe-don't-judge prompt. The backend is chosen by one
+environment variable (`EXTRACTOR=anthropic|ollama|mock`, default `ollama`).
+
+This is not a convenience abstraction — it answers two hard constraints:
+
+1. **The Treasury network blocks most outbound ML endpoints.** A cloud-API
+   prototype that can't run inside the network is a dead end. The Ollama
+   backend runs inference entirely on localhost — no key, no account, no
+   egress — so the production posture is self-hosted inference (or an
+   allow-listed endpoint) with zero changes to the rules engine, endpoints,
+   or UI.
+2. **Per-application cost at ~150K applications/year.** A hosted API at even
+   ~$0.01/document is ~$1.5K/year and requires a procurement relationship;
+   self-hosted inference is a fixed hardware cost with zero marginal cost
+   per document. The interface makes that a deployment decision, not a
+   rewrite.
+
+The third backend, `mock`, returns fixture-derived extractions with no
+network at all — it is how the entire downstream stack (endpoints, PDF
+handling, batch mode, rate limiting, UI) was built and is tested end-to-end
+with zero API calls.
+
+## NEEDS REVIEW is the product working, not failing
+
+The verdict tiers encode a triage model. Standalone CFR violations (bad or
+missing health warning, proof arithmetic that doesn't reconcile, missing
+mandatory information) FAIL. Cross-check discrepancies and anything the
+system is unsure of go to NEEDS REVIEW — a human agent makes the call, which
+is exactly what happened historically with Bärenjäger's approved 35-vs-39
+discrepancy. The win is an agent reviewing a small percentage of
+applications instead of all of them.
+
+This framing also absorbs model quality differences cleanly: a smaller local
+model that is less certain than a frontier model produces a **higher triage
+rate**, not wrong answers — uncertainty routes to a human rather than into a
+verdict. The batch UI surfaces that rate directly ("N of M cleared
+automatically") so labor saved is a measured claim, not a promise.
+
 ## Performance constraint
 
 Hard requirement: **under 5 seconds** for a single label (warm). A prior vendor
