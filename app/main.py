@@ -10,10 +10,12 @@ import json
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
+from app.audit import audit_log
 from app.extractors import get_extractor
 from app.pdf import render_pdf
 from app.ratelimit import client_ip, limiter
@@ -75,7 +77,16 @@ def _document_images(data: bytes, media_type: str) -> list[tuple[bytes, str]]:
     return [(data, media_type)]
 
 
-async def _verify_one(filename: str, data: bytes) -> dict:
+def _require_name(value: str, field: str) -> str:
+    name = " ".join((value or "").split())
+    if not name:
+        raise HTTPException(status_code=400, detail=f"Enter your name or ID ({field}).")
+    if len(name) > 120:
+        raise HTTPException(status_code=400, detail=f"{field} name is too long.")
+    return name
+
+
+async def _verify_one(filename: str, data: bytes, processor: str) -> dict:
     if not data:
         raise HTTPException(status_code=400, detail="Empty file.")
     if len(data) > MAX_UPLOAD_BYTES:
@@ -101,8 +112,12 @@ async def _verify_one(filename: str, data: bytes) -> dict:
     elapsed = time.perf_counter() - start
 
     report = verify(result.extraction)
+    record = audit_log.record(filename, processor, report.verdict.value)
     return {
         "filename": filename,
+        "audit_id": record.id,
+        "processor": record.processor,
+        "processed_at": record.processed_at,
         "verdict": report.verdict.value,
         "cfr_part": report.cfr_part,
         "checks": [c.model_dump() for c in report.checks],
@@ -114,14 +129,20 @@ async def _verify_one(filename: str, data: bytes) -> dict:
 
 
 @app.post("/api/verify")
-async def verify_endpoint(request: Request, file: UploadFile) -> dict:
+async def verify_endpoint(
+    request: Request, file: UploadFile, processor: str = Form("")
+) -> dict:
+    processor = _require_name(processor, "processor")
     limiter.check(client_ip(request), cost=1)
     data = await file.read()
-    return await _verify_one(file.filename or "upload", data)
+    return await _verify_one(file.filename or "upload", data, processor)
 
 
 @app.post("/api/verify/batch")
-async def verify_batch(request: Request, files: list[UploadFile]) -> StreamingResponse:
+async def verify_batch(
+    request: Request, files: list[UploadFile], processor: str = Form("")
+) -> StreamingResponse:
+    processor = _require_name(processor, "processor")
     if len(files) > MAX_BATCH_FILES:
         raise HTTPException(
             status_code=413, detail=f"At most {MAX_BATCH_FILES} files per batch."
@@ -138,7 +159,7 @@ async def verify_batch(request: Request, files: list[UploadFile]) -> StreamingRe
     async def one(name: str, data: bytes) -> dict:
         async with semaphore:
             try:
-                return await _verify_one(name, data)
+                return await _verify_one(name, data, processor)
             except HTTPException as exc:
                 return {"filename": name, "error": exc.detail}
             except Exception as exc:
@@ -151,6 +172,27 @@ async def verify_batch(request: Request, files: list[UploadFile]) -> StreamingRe
             yield json.dumps(result, ensure_ascii=False) + "\n"
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+class ReviewRequest(BaseModel):
+    reviewer: str
+
+
+@app.get("/api/audit")
+def audit_list() -> dict:
+    return {"records": [r.to_dict() for r in audit_log.list_records()]}
+
+
+@app.post("/api/audit/{audit_id}/review")
+def audit_review(audit_id: int, body: ReviewRequest) -> dict:
+    reviewer = _require_name(body.reviewer, "reviewer")
+    try:
+        record = audit_log.review(audit_id, reviewer)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown audit record.")
+    except ValueError:
+        raise HTTPException(status_code=409, detail="This item was already reviewed.")
+    return record.to_dict()
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

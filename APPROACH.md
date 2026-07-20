@@ -116,6 +116,37 @@ rate**, not wrong answers — uncertainty routes to a human rather than into a
 verdict. The batch UI surfaces that rate directly ("N of M cleared
 automatically") so labor saved is a measured claim, not a promise.
 
+## Accountability: identity stamp, audit trail, two-name sign-off
+
+Compliance decisions need to be attributable, so the workflow is built
+around a lightweight accountability layer — deliberately minimal in
+mechanism, deliberate in design:
+
+- **Identity is a stamp, not authentication.** Before processing, the
+  agent enters a name or ID; it is recorded with every decision. There
+  are no passwords, accounts, or sessions — production would sit behind
+  Treasury SSO, and this is a stand-in for the accountability concept,
+  not a security control.
+- **The audit trail stores decision records only.** Per processed item:
+  processor name, verdict, timestamp, filename, and the reviewer's name
+  once signed off. No extraction content, no label images, no application
+  data — an audit log exists because compliance decisions require
+  accountability, while the prototype still persists nothing sensitive
+  (in-memory, resets on restart).
+- **Two-name sign-off with mismatch awareness.** The processor's name is
+  captured at processing; at sign-off the agent re-enters their name — a
+  deliberate "I attest I reviewed this" action, not a passive click. The
+  button reads "Confirm review complete", not "Approve": it records the
+  agent's review decision and does not issue a COLA approval or touch the
+  real COLA system. Both names are always recorded. When they match, the
+  record reads "Processed and reviewed by X"; when they differ, it reads
+  "Processed by X · Reviewed by Y" with a visual flag and the signer gets
+  a gentle prompt ("This was processed under a different name — did you
+  mean to sign as someone else?"). A mismatch is information, not an
+  error: a genuine two-person review is legitimate and must be captured
+  correctly (separation-of-duties awareness), while the prompt catches
+  the typo case.
+
 ## Local inference: measured findings (documented, not hidden)
 
 Validated against the three real COLA fixtures with `qwen2.5vl:7b` under

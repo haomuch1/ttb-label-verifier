@@ -9,42 +9,79 @@
   body {
     font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
     font-size: 18px; line-height: 1.5; color: #111;
-    max-width: 860px; margin: 0 auto; padding: 1rem 1rem 4rem;
+    max-width: 900px; margin: 0 auto; padding: 1rem 1rem 4rem;
     background: #fff;
   }
   h1 { font-size: 1.7rem; margin: .5rem 0 .25rem; }
-  .sub { color: #444; margin: 0 0 1.25rem; }
+  h2 { font-size: 1.3rem; margin: 1.25rem 0 .5rem; }
+  .sub { color: #444; margin: 0 0 1rem; }
 
-  .buttons { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.5rem; }
-  .big-btn {
-    flex: 1 1 220px; display: block; text-align: center; cursor: pointer;
-    padding: 1.1rem 1rem; font-size: 1.15rem; font-weight: 700;
-    background: #0b4f8a; color: #fff; border: 3px solid #083a66; border-radius: 10px;
+  .nav { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.25rem; }
+  .nav button {
+    flex: 1 1 200px; cursor: pointer; padding: 1rem .8rem;
+    font-size: 1.15rem; font-weight: 700; border-radius: 10px;
+    background: #fff; color: #0b4f8a; border: 3px solid #0b4f8a;
   }
-  .big-btn:hover, .big-btn:focus-within { background: #0d5ea6; }
-  .big-btn input { display: none; }
+  .nav button .small { display: block; font-size: .9rem; font-weight: 400; color: #333; margin-top: .2rem; }
+  .nav button[aria-pressed="true"] { background: #0b4f8a; color: #fff; }
+  .nav button[aria-pressed="true"] .small { color: #dce9f7; }
 
-  #status { font-size: 1.2rem; font-weight: 600; margin: 1rem 0; min-height: 1.5em; }
+  .field { margin: .9rem 0; }
+  .field label { display: block; font-weight: 700; margin-bottom: .3rem; font-size: 1.05rem; }
+  .field input[type="text"] {
+    width: 100%; max-width: 420px; font-size: 1.1rem; padding: .55rem .7rem;
+    border: 2px solid #888; border-radius: 8px;
+  }
+
+  .dropzone {
+    border: 3px dashed #0b4f8a; border-radius: 12px; background: #f7fafd;
+    padding: 2rem 1rem; text-align: center; cursor: pointer;
+    font-size: 1.15rem; font-weight: 600; color: #0b4f8a;
+  }
+  .dropzone.dragging { background: #dce9f7; border-style: solid; }
+  .dropzone.has-files { border-style: solid; background: #eef7f0; color: #0f5223; border-color: #1a7f37; }
+  .dropzone .small { display: block; font-weight: 400; color: #444; font-size: .95rem; margin-top: .3rem; }
+
+  .go-row { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; margin: 1rem 0; }
+  .go {
+    font-size: 1.25rem; font-weight: 800; padding: .8rem 1.6rem;
+    border-radius: 10px; border: 3px solid #083a66;
+    background: #0b4f8a; color: #fff; cursor: pointer;
+  }
+  .go:disabled {
+    background: #cfd6dd; color: #6b7280; border-color: #aab2ba; cursor: not-allowed;
+  }
+  .helper { color: #444; font-size: 1rem; margin: 0; }
+
+  #status, #batch-status { font-size: 1.2rem; font-weight: 600; margin: 1rem 0; min-height: 1.5em; }
 
   .band {
-    display: none; padding: 1.4rem 1rem; margin: 1rem 0; border-radius: 12px;
+    padding: 1.4rem 1rem; margin: 1rem 0 .5rem; border-radius: 12px;
     text-align: center; border: 4px solid transparent;
   }
-  .band .word { font-size: 3.4rem; font-weight: 900; letter-spacing: .03em; display: block; }
-  .band .meaning { font-size: 1.25rem; font-weight: 600; display: block; margin-top: .3rem; }
-  .band.pass { background: #1a7f37; color: #fff; display: block; }
-  .band.review { background: #ffd33d; color: #111; border-color: #9a6700; display: block; }
-  .band.fail { background: #b91c1c; color: #fff; display: block; }
+  .band .word { font-size: 3.2rem; font-weight: 900; letter-spacing: .03em; display: block; }
+  .band .meaning { font-size: 1.2rem; font-weight: 600; display: block; margin-top: .3rem; }
+  .band.pass { background: #1a7f37; color: #fff; }
+  .band.review { background: #ffd33d; color: #111; border-color: #9a6700; }
+  .band.fail { background: #b91c1c; color: #fff; }
+
+  .signoff {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .6rem;
+    background: #fafafa; border: 2px solid #bbb; border-radius: 10px;
+    padding: .8rem 1rem; margin: .75rem 0;
+  }
+  .signoff label { font-weight: 700; }
+  .signoff input { flex: 1 1 200px; font-size: 1.05rem; padding: .45rem .6rem; border: 2px solid #888; border-radius: 8px; }
+  .signoff button {
+    cursor: pointer; font-size: 1.05rem; font-weight: 700; padding: .55rem .9rem;
+    background: #0b4f8a; color: #fff; border: 2px solid #083a66; border-radius: 8px;
+  }
+  .attest { font-weight: 700; padding: .6rem .2rem; }
+  .attest .flag { color: #9a6700; }
 
   .checks { margin: 0; padding: 0; list-style: none; }
-  .checks li {
-    display: flex; gap: .8rem; align-items: baseline;
-    padding: .7rem .4rem; border-bottom: 1px solid #ddd;
-  }
-  .chip {
-    flex: 0 0 8.5rem; text-align: center; font-weight: 800; font-size: .95rem;
-    padding: .25rem .3rem; border-radius: 6px;
-  }
+  .checks li { display: flex; gap: .8rem; align-items: baseline; padding: .65rem .4rem; border-bottom: 1px solid #ddd; }
+  .chip { flex: 0 0 8.5rem; text-align: center; font-weight: 800; font-size: .92rem; padding: .25rem .3rem; border-radius: 6px; white-space: nowrap; }
   .chip.PASS { background: #d7efdd; color: #0f5223; }
   .chip.NEEDS_REVIEW { background: #fff3bf; color: #6b4a00; }
   .chip.FAIL { background: #fadadb; color: #7d1214; }
@@ -57,50 +94,93 @@
     display: none; padding: 1rem; margin: 1rem 0; border-radius: 10px;
     background: #eef4fb; border: 2px solid #0b4f8a; font-size: 1.2rem; font-weight: 700;
   }
-  table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
-  th, td { text-align: left; padding: .55rem .4rem; border-bottom: 1px solid #ddd; }
-  th { font-size: .95rem; color: #444; }
-  td .chip { display: inline-block; min-width: 8rem; }
+  .group { margin-top: 1.25rem; }
+  .group > h2 { padding: .5rem .8rem; border-radius: 8px; }
+  .group.review > h2 { background: #fff3bf; color: #6b4a00; }
+  .group.fail > h2 { background: #fadadb; color: #7d1214; }
+  .group.pass > h2 { background: #d7efdd; color: #0f5223; }
+  .group.error > h2 { background: #eee; color: #333; }
+  .item { border: 1px solid #ccc; border-radius: 10px; padding: .8rem 1rem; margin: .6rem 0; }
+  .item .head { font-weight: 700; font-size: 1.1rem; }
+  .item .why { color: #333; margin: .3rem 0 .1rem; }
+  .item details { margin-top: .4rem; }
+  .item summary { cursor: pointer; font-weight: 600; color: #0b4f8a; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: .5rem; font-size: .98rem; }
+  th, td { text-align: left; padding: .55rem .4rem; border-bottom: 1px solid #ddd; vertical-align: top; }
+  th { font-size: .92rem; color: #444; }
+  .mismatch-note { color: #9a6700; font-weight: 700; }
   .err { color: #b91c1c; font-weight: 700; }
-  section h2 { font-size: 1.25rem; margin: 1.5rem 0 .5rem; }
+  .view { display: none; }
+  .view.active { display: block; }
 </style>
 </head>
 <body>
   <h1>TTB Label Verifier</h1>
-  <p class="sub">Check a COLA application (Form 5100.31) or a photo of a label.
-     You will get one answer: <strong>PASS</strong>, <strong>NEEDS REVIEW</strong>, or <strong>FAIL</strong>.</p>
+  <p class="sub">Check COLA applications (Form 5100.31) and label images against the labeling rules.
+     Every item gets one answer: <strong>PASS</strong>, <strong>NEEDS REVIEW</strong>, or <strong>FAIL</strong>.</p>
 
-  <div class="buttons">
-    <label class="big-btn">Check a PDF or image
-      <input type="file" id="file-one" accept=".pdf,image/*">
-    </label>
-    <label class="big-btn">Take a photo
-      <input type="file" id="file-camera" accept="image/*" capture="environment">
-    </label>
-    <label class="big-btn">Check many files
-      <input type="file" id="file-batch" accept=".pdf,image/*" multiple>
-    </label>
-  </div>
+  <nav class="nav" aria-label="What do you want to do?">
+    <button id="nav-process" aria-pressed="true">Process a form
+      <span class="small">Check one COLA application</span></button>
+    <button id="nav-batch" aria-pressed="false">Batch process
+      <span class="small">Check many files at once</span></button>
+    <button id="nav-audit" aria-pressed="false">Audit
+      <span class="small">See what has been processed</span></button>
+  </nav>
 
-  <div id="status" role="status" aria-live="polite"></div>
-
-  <div id="band" class="band">
-    <span class="word" id="band-word"></span>
-    <span class="meaning" id="band-meaning"></span>
-  </div>
-
-  <section id="detail" style="display:none">
-    <h2>What was checked</h2>
-    <ul class="checks" id="checks"></ul>
-    <p class="meta" id="meta"></p>
+  <!-- ============ PROCESS ONE ============ -->
+  <section id="view-process" class="view active">
+    <div class="field">
+      <label for="name-one">Your name or ID</label>
+      <input type="text" id="name-one" class="agent-name" autocomplete="name"
+             placeholder="e.g. J. Alvarez or TTB-1042">
+    </div>
+    <div class="dropzone" id="drop-one" tabindex="0" role="button"
+         aria-label="Drop a file here or press to choose one">
+      <span id="drop-one-text">Drop a PDF or image here — or click to choose a file</span>
+      <span class="small">COLA application PDFs and label images (PNG, JPEG, WebP)</span>
+      <input type="file" id="file-one" accept=".pdf,image/*" hidden>
+    </div>
+    <div class="go-row">
+      <button class="go" id="go-one" disabled>Process</button>
+      <p class="helper" id="helper-one">Enter your name and add a file to begin.</p>
+    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+    <div id="single-result"></div>
   </section>
 
-  <div id="batch-summary"></div>
-  <section id="batch" style="display:none">
-    <h2>Results</h2>
-    <table>
-      <thead><tr><th>File</th><th>Answer</th><th>Details</th></tr></thead>
-      <tbody id="batch-rows"></tbody>
+  <!-- ============ BATCH ============ -->
+  <section id="view-batch" class="view">
+    <div class="field">
+      <label for="name-batch">Your name or ID</label>
+      <input type="text" id="name-batch" class="agent-name" autocomplete="name"
+             placeholder="e.g. J. Alvarez or TTB-1042">
+    </div>
+    <div class="dropzone" id="drop-batch" tabindex="0" role="button"
+         aria-label="Drop files here or press to choose files">
+      <span id="drop-batch-text">Drop several files here — or click to choose them</span>
+      <span class="small">Up to 20 PDFs or images at once</span>
+      <input type="file" id="file-batch" accept=".pdf,image/*" multiple hidden>
+    </div>
+    <div class="go-row">
+      <button class="go" id="go-batch" disabled>Process files</button>
+      <p class="helper" id="helper-batch">Enter your name and add files to begin.</p>
+    </div>
+    <div id="batch-status" role="status" aria-live="polite"></div>
+    <div id="batch-summary"></div>
+    <div id="batch-groups"></div>
+  </section>
+
+  <!-- ============ AUDIT ============ -->
+  <section id="view-audit" class="view">
+    <h2>Processing record</h2>
+    <p class="sub">Everything processed since this app was started: who did it, the answer, and who reviewed it.
+       Nothing else is stored — no label images, no application content.</p>
+    <div id="audit-empty" style="display:none">Nothing has been processed yet.</div>
+    <table id="audit-table" style="display:none">
+      <thead><tr><th>When</th><th>File</th><th>Answer</th><th>Accountability</th></tr></thead>
+      <tbody id="audit-rows"></tbody>
     </table>
   </section>
 
@@ -114,70 +194,230 @@ const CHIP_TEXT = {
   "PASS": "PASS", "NEEDS_REVIEW": "NEEDS REVIEW",
   "FAIL": "FAIL", "NOT_APPLICABLE": "Not checked",
 };
+const GROUPS = [
+  ["NEEDS_REVIEW", "review", "Needs review — please look at these"],
+  ["FAIL", "fail", "Failed — see what went wrong"],
+  ["PASS", "pass", "Passed — no action needed"],
+  ["ERROR", "error", "Could not be checked"],
+];
 
 const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+const normName = (s) => s.trim().replace(/\s+/g, " ").toLowerCase();
 
-function resetViews() {
-  $("band").className = "band";
-  $("detail").style.display = "none";
-  $("batch").style.display = "none";
-  $("batch-summary").style.display = "none";
-  $("batch-rows").innerHTML = "";
-  $("checks").innerHTML = "";
+/* ---------- name fields stay in sync across modes ---------- */
+for (const input of document.querySelectorAll(".agent-name")) {
+  input.addEventListener("input", () => {
+    for (const other of document.querySelectorAll(".agent-name")) {
+      if (other !== input) other.value = input.value;
+    }
+    updateGate("one");
+    updateGate("batch");
+  });
 }
 
-function showResult(r) {
-  const [word, meaning, cls] = BAND_TEXT[r.verdict] || ["?", "", ""];
-  $("band-word").textContent = word;
-  $("band-meaning").textContent = meaning;
-  $("band").className = "band " + cls;
-  const list = $("checks");
-  for (const c of r.checks) {
-    const li = document.createElement("li");
-    const chip = document.createElement("span");
-    chip.className = "chip " + c.verdict;
-    chip.textContent = CHIP_TEXT[c.verdict] || c.verdict;
-    const text = document.createElement("span");
-    const name = document.createElement("span");
-    name.className = "check-name";
-    name.textContent = c.name + ". ";
-    const detail = document.createElement("span");
-    detail.className = "check-detail";
-    detail.textContent = c.detail;
-    text.append(name, detail);
-    li.append(chip, text);
-    list.append(li);
+/* ---------- staged files + gated Process buttons ---------- */
+const staged = { one: [], batch: [] };
+
+function updateGate(mode) {
+  const name = $(mode === "one" ? "name-one" : "name-batch").value.trim();
+  const files = staged[mode];
+  const btn = $(mode === "one" ? "go-one" : "go-batch");
+  const helper = $(mode === "one" ? "helper-one" : "helper-batch");
+  const fileWord = mode === "one" ? "a file" : "files";
+  btn.disabled = !(name && files.length);
+  if (!name && !files.length) helper.textContent = `Enter your name and add ${fileWord} to begin.`;
+  else if (!name) helper.textContent = "Enter your name to begin.";
+  else if (!files.length) helper.textContent = `Add ${fileWord} to begin.`;
+  else helper.textContent = mode === "one"
+    ? `Ready — press Process to check ${files[0].name}.`
+    : `Ready — press Process to check ${files.length} file${files.length > 1 ? "s" : ""}.`;
+}
+
+function stageFiles(mode, files) {
+  staged[mode] = mode === "one" ? [files[0]] : files.slice(0, 20);
+  const zoneText = $(mode === "one" ? "drop-one-text" : "drop-batch-text");
+  const zone = $(mode === "one" ? "drop-one" : "drop-batch");
+  if (mode === "one") {
+    zoneText.textContent = "Selected: " + files[0].name + " — click to choose a different file";
+  } else {
+    const names = staged.batch.map(f => f.name);
+    const shown = names.slice(0, 3).join(", ") + (names.length > 3 ? ` and ${names.length - 3} more` : "");
+    zoneText.textContent = `${names.length} file${names.length > 1 ? "s" : ""} selected: ${shown}`;
   }
-  $("meta").textContent =
-    `Checked in ${r.seconds} seconds` +
-    (r.cfr_part ? ` — governed by ${r.cfr_part}` : "") +
-    (r.model ? ` — model: ${r.model}` : "");
-  $("detail").style.display = "block";
+  zone.classList.add("has-files");
+  updateGate(mode);
 }
 
-async function verifyOne(file) {
-  resetViews();
+function clearStaged(mode) {
+  staged[mode] = [];
+  const zone = $(mode === "one" ? "drop-one" : "drop-batch");
+  zone.classList.remove("has-files");
+  $(mode === "one" ? "drop-one-text" : "drop-batch-text").textContent =
+    mode === "one" ? "Drop a PDF or image here — or click to choose a file"
+                   : "Drop several files here — or click to choose them";
+  updateGate(mode);
+}
+
+/* ---------- view switching ---------- */
+const views = { process: "view-process", batch: "view-batch", audit: "view-audit" };
+function show(view) {
+  for (const [key, id] of Object.entries(views)) {
+    $(id).classList.toggle("active", key === view);
+    $("nav-" + key).setAttribute("aria-pressed", String(key === view));
+  }
+  if (view === "audit") loadAudit();
+}
+$("nav-process").onclick = () => show("process");
+$("nav-batch").onclick = () => show("batch");
+$("nav-audit").onclick = () => show("audit");
+
+/* ---------- drop zones ---------- */
+function wireDropzone(zoneId, inputId, mode) {
+  const zone = $(zoneId), input = $(inputId);
+  zone.addEventListener("click", () => input.click());
+  zone.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); }
+  });
+  input.addEventListener("change", () => {
+    if (input.files.length) stageFiles(mode, [...input.files]);
+    input.value = "";
+  });
+  zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("dragging"); });
+  zone.addEventListener("dragleave", () => zone.classList.remove("dragging"));
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault(); zone.classList.remove("dragging");
+    const files = [...e.dataTransfer.files];
+    if (files.length) stageFiles(mode, files);
+  });
+}
+wireDropzone("drop-one", "file-one", "one");
+wireDropzone("drop-batch", "file-batch", "batch");
+$("go-one").onclick = () => processOne();
+$("go-batch").onclick = () => processBatch();
+
+/* ---------- sign-off (two-name attestation) ---------- */
+function signoffControl(record) {
+  const box = el("div", "signoff");
+  const label = el("label", null, "Reviewed by (your name):");
+  const input = el("input");
+  input.placeholder = "Type your name to confirm you reviewed this";
+  const btn = el("button", null, "Confirm review complete");
+  const note = el("span", null, "");
+  box.append(label, input, btn, note);
+
+  btn.onclick = async () => {
+    const reviewer = input.value.trim();
+    if (!reviewer) { input.focus(); return; }
+    if (normName(reviewer) !== normName(record.processor)) {
+      const ok = confirm(
+        "This was processed under a different name — did you mean to sign as someone else?\n\n" +
+        "Processed by: " + record.processor + "\nSigning as: " + reviewer + "\n\n" +
+        "OK to record the review under this name (a second-person review is fine). " +
+        "Cancel to fix a typo."
+      );
+      if (!ok) { input.focus(); return; }
+    }
+    btn.disabled = true;
+    try {
+      const resp = await fetch(`/api/audit/${record.audit_id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewer }),
+      });
+      const body = await resp.json();
+      if (!resp.ok) throw new Error(body.detail || resp.statusText);
+      box.replaceWith(attestLine(body));
+    } catch (e) {
+      btn.disabled = false;
+      note.textContent = "Sorry — " + e.message;
+      note.className = "err";
+    }
+  };
+  return box;
+}
+
+function attestLine(rec) {
+  const p = el("p", "attest");
+  if (rec.name_mismatch) {
+    p.append(el("span", "flag", "⚑ "));
+    p.append(document.createTextNode(
+      `Processed by ${rec.processor} · Reviewed by ${rec.reviewer}`));
+  } else {
+    p.append(document.createTextNode(`Processed and reviewed by ${rec.reviewer}.`));
+  }
+  return p;
+}
+
+/* ---------- process one ---------- */
+async function processOne() {
+  const name = $("name-one").value.trim();
+  const file = staged.one[0];
+  if (!name || !file) return;
+  $("single-result").innerHTML = "";
   $("status").textContent = "Checking " + file.name + " …";
+  $("go-one").disabled = true;
   const form = new FormData();
   form.append("file", file);
+  form.append("processor", name);
   try {
     const resp = await fetch("/api/verify", { method: "POST", body: form });
     const body = await resp.json();
     if (!resp.ok) throw new Error(body.detail || resp.statusText);
     $("status").textContent = "";
-    showResult(body);
+    renderSingle(body);
   } catch (e) {
     $("status").textContent = "Sorry — " + e.message;
+  } finally {
+    clearStaged("one");
   }
 }
 
-async function verifyBatch(files) {
-  resetViews();
-  $("batch").style.display = "block";
-  $("status").textContent = `Checking ${files.length} files …`;
+function renderSingle(r) {
+  const root = $("single-result");
+  const [word, meaning, cls] = BAND_TEXT[r.verdict] || ["?", "", ""];
+  const band = el("div", "band " + cls);
+  band.append(el("span", "word", word), el("span", "meaning", meaning));
+  root.append(band);
+
+  root.append(signoffControl(r));
+
+  const heading = el("h2", null, "What was checked");
+  const list = el("ul", "checks");
+  for (const c of r.checks) {
+    const li = el("li");
+    const text = el("span");
+    text.append(el("span", "check-name", c.name + ". "),
+                el("span", "check-detail", c.detail));
+    li.append(el("span", "chip " + c.verdict, CHIP_TEXT[c.verdict] || c.verdict), text);
+    list.append(li);
+  }
+  const meta = el("p", "meta",
+    `Checked in ${r.seconds} seconds` +
+    (r.cfr_part ? ` — governed by ${r.cfr_part}` : "") +
+    ` — processed by ${r.processor}`);
+  root.append(heading, list, meta);
+}
+
+/* ---------- batch ---------- */
+async function processBatch() {
+  const name = $("name-batch").value.trim();
+  const files = staged.batch;
+  if (!name || !files.length) return;
+  $("batch-groups").innerHTML = "";
+  $("batch-summary").style.display = "none";
+  $("batch-status").textContent = `Checking ${files.length} files …`;
+  $("go-batch").disabled = true;
   const form = new FormData();
   for (const f of files) form.append("files", f);
-  let done = 0, review = 0, failed = 0;
+  form.append("processor", name);
+
+  const results = [];
   try {
     const resp = await fetch("/api/verify/batch", { method: "POST", body: form });
     if (!resp.ok) {
@@ -188,60 +428,116 @@ async function verifyBatch(files) {
     const decoder = new TextDecoder();
     let buffer = "";
     for (;;) {
-      const { value, done: eof } = await reader.read();
-      if (eof) break;
+      const { value, done } = await reader.read();
+      if (done) break;
       buffer += decoder.decode(value, { stream: true });
       let nl;
       while ((nl = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, nl).trim();
         buffer = buffer.slice(nl + 1);
         if (!line) continue;
-        const r = JSON.parse(line);
-        addBatchRow(r);
-        done += 1;
-        if (r.error || r.verdict === "FAIL") failed += 1;
-        else if (r.verdict === "NEEDS_REVIEW") review += 1;
-        $("status").textContent = `Checked ${done} of ${files.length} …`;
+        results.push(JSON.parse(line));
+        $("batch-status").textContent = `Checked ${results.length} of ${files.length} …`;
+        renderGroups(results);
       }
     }
-    $("status").textContent = "";
-    const cleared = done - review - failed;
-    const pct = done ? Math.round((cleared / done) * 100) : 0;
+    $("batch-status").textContent = "";
+    const done_ = results.length;
+    const review = results.filter(r => r.verdict === "NEEDS_REVIEW").length;
+    const failed = results.filter(r => r.error || r.verdict === "FAIL").length;
+    const cleared = done_ - review - failed;
+    const pct = done_ ? Math.round((cleared / done_) * 100) : 0;
     $("batch-summary").textContent =
-      `${cleared} of ${done} cleared automatically (${pct}%). ` +
+      `${cleared} of ${done_} cleared automatically (${pct}%). ` +
       `${review} need a person to review. ${failed} failed or had errors.`;
     $("batch-summary").style.display = "block";
   } catch (e) {
-    $("status").textContent = "Sorry — " + e.message;
+    $("batch-status").textContent = "Sorry — " + e.message;
+  } finally {
+    clearStaged("batch");
   }
 }
 
-function addBatchRow(r) {
-  const tr = document.createElement("tr");
-  const name = document.createElement("td");
-  name.textContent = r.filename;
-  const answer = document.createElement("td");
-  const detail = document.createElement("td");
+function renderGroups(results) {
+  const root = $("batch-groups");
+  root.innerHTML = "";
+  for (const [verdict, cls, title] of GROUPS) {
+    const items = results.filter(r =>
+      verdict === "ERROR" ? r.error : (!r.error && r.verdict === verdict));
+    if (!items.length) continue;
+    const group = el("div", "group " + cls);
+    group.append(el("h2", null, `${title} (${items.length})`));
+    for (const r of items) group.append(batchItem(r));
+    root.append(group);
+  }
+}
+
+function batchItem(r) {
+  const item = el("div", "item");
+  item.append(el("div", "head", r.filename));
   if (r.error) {
-    answer.innerHTML = '<span class="err">ERROR</span>';
-    detail.textContent = r.error;
-  } else {
-    const chip = document.createElement("span");
-    chip.className = "chip " + r.verdict;
-    chip.textContent = CHIP_TEXT[r.verdict] || r.verdict;
-    answer.append(chip);
-    const flagged = r.checks.filter(c => c.verdict === "FAIL" || c.verdict === "NEEDS_REVIEW");
-    detail.textContent = flagged.length
-      ? flagged.map(c => c.name).join("; ")
-      : "All checks passed";
+    item.append(el("p", "why err", r.error));
+    return item;
   }
-  tr.append(name, answer, detail);
-  $("batch-rows").append(tr);
+  const flagged = r.checks.filter(c => c.verdict === "FAIL" || c.verdict === "NEEDS_REVIEW");
+  if (flagged.length) {
+    for (const c of flagged) item.append(el("p", "why", `${c.name}: ${c.detail}`));
+  } else {
+    item.append(el("p", "why", "All checks passed."));
+  }
+  const details = el("details");
+  details.append(el("summary", null, "Show all checks"));
+  const list = el("ul", "checks");
+  for (const c of r.checks) {
+    const li = el("li");
+    const text = el("span");
+    text.append(el("span", "check-name", c.name + ". "),
+                el("span", "check-detail", c.detail));
+    li.append(el("span", "chip " + c.verdict, CHIP_TEXT[c.verdict] || c.verdict), text);
+    list.append(li);
+  }
+  details.append(list);
+  item.append(details, signoffControl(r));
+  return item;
 }
 
-$("file-one").addEventListener("change", e => e.target.files[0] && verifyOne(e.target.files[0]));
-$("file-camera").addEventListener("change", e => e.target.files[0] && verifyOne(e.target.files[0]));
-$("file-batch").addEventListener("change", e => e.target.files.length && verifyBatch([...e.target.files]));
+/* ---------- audit ---------- */
+async function loadAudit() {
+  try {
+    const resp = await fetch("/api/audit");
+    const body = await resp.json();
+    const rows = $("audit-rows");
+    rows.innerHTML = "";
+    const records = body.records || [];
+    $("audit-empty").style.display = records.length ? "none" : "block";
+    $("audit-table").style.display = records.length ? "table" : "none";
+    for (const rec of records) {
+      const tr = el("tr");
+      const when = el("td", null, new Date(rec.processed_at).toLocaleString());
+      const file = el("td", null, rec.filename);
+      const answer = el("td");
+      answer.append(el("span", "chip " + rec.verdict, CHIP_TEXT[rec.verdict] || rec.verdict));
+      const who = el("td");
+      if (!rec.reviewer) {
+        who.textContent = `Processed by ${rec.processor} · not yet reviewed`;
+      } else if (rec.name_mismatch) {
+        who.append(el("span", "mismatch-note", "⚑ "));
+        who.append(document.createTextNode(
+          `Processed by ${rec.processor} · Reviewed by ${rec.reviewer}`));
+      } else {
+        who.textContent = `Processed and reviewed by ${rec.reviewer}`;
+      }
+      tr.append(when, file, answer, who);
+      rows.append(tr);
+    }
+  } catch (e) {
+    $("audit-empty").textContent = "Could not load the record: " + e.message;
+    $("audit-empty").style.display = "block";
+  }
+}
+
+updateGate("one");
+updateGate("batch");
 </script>
 </body>
 </html>
