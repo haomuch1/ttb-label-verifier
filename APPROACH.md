@@ -7,6 +7,55 @@ coding CLI) — stated openly, since agentic AI development is the skill under
 test for this position. The commit history is the development history: each
 feature was specified, generated, reviewed, and committed iteratively.
 
+## Attention to requirements — decisions traced to stakeholder input
+
+The requirements were not a spec. They were embedded in four interview
+transcripts, and identifying them was part of the task. Each decision below
+traces to a specific person.
+
+**Five-second response.** Sarah Chen described a prior vendor pilot that
+took 30–40 seconds per label and died because agents abandoned it: "If we
+can't get results back in about 5 seconds, nobody's going to use it." This
+drove a single round trip per document. (The two-region split later made
+this two concurrent calls — wall-clock stays near the slower of the two,
+preserving the intent.)
+
+**Simple interface.** Sarah set the bar at "something my mother could
+figure out — she's 73," with half her team over 50. This drove the large
+one-word verdict band, plain-language check descriptions, and no hunting
+for buttons.
+
+**Batch processing.** Sarah noted peak-season importers dump 200–300
+applications at once, processed one at a time today. This drove batch mode
+with a triage summary.
+
+**Fuzzy identity matching.** Dave Morrison's example: "STONE'S THROW" on
+the label vs "Stone's Throw" in the application is "obviously the same
+thing. You need judgment." This drove case-, punctuation-, and (after real
+data surfaced "Bärenjäger" vs "BARENJAGER") diacritic-insensitive matching
+on brand and class/type — reported as a match with a note, never a failure.
+
+**Strict warning matching.** Jenny Park described the opposite rule for the
+health warning: exact, word-for-word, "GOVERNMENT WARNING:" in caps; she
+rejected a label using title case. This drove the deterministic strict
+comparison against canonical 27 CFR 16.21 text, case preserved. The
+coexistence of these two contradictory rules — forgiving for identity,
+strict for the warning — is the central design tension.
+
+**Imperfect images.** Jenny flagged labels shot at angles or with glare.
+This drove the explicit unreadable-outcome path rather than a crash.
+
+**No COLA integration, nothing sensitive stored.** Marcus Williams was
+explicit: standalone proof-of-concept, nothing sensitive persisted. This
+drove a design with no database and no retained label content. (The later
+audit log stores decision records only — no images, no application
+content — preserving the spirit of this.)
+
+**Local inference.** Marcus noted the network blocks outbound ML
+endpoints — half the prior vendor's features failed on the firewall. This
+made self-hosted inference not merely cheaper but necessary for any real
+internal deployment, and drove the local-first architecture.
+
 ## Core design: the model extracts, code judges
 
 The single most important architectural decision. One Claude vision call reads
@@ -149,36 +198,35 @@ Every failure path is a deliberate choice about where degradation lands:
 - **Rate-limit rejections** state plainly what happened and what to do
   ("Wait a minute and retry" / "Try again tomorrow").
 
-## Accountability: identity stamp, audit trail, two-name sign-off
+## Accountability & sign-off design
 
-Compliance decisions need to be attributable, so the workflow is built
-around a lightweight accountability layer — deliberately minimal in
-mechanism, deliberate in design:
+The assessment did not ask for this; it was added because compliance
+decisions require attribution, and a tool that processes them without a
+record of who decided what is incomplete.
 
-- **Identity is a stamp, not authentication.** Before processing, the
-  agent enters a name or ID; it is recorded with every decision. There
-  are no passwords, accounts, or sessions — production would sit behind
-  Treasury SSO, and this is a stand-in for the accountability concept,
-  not a security control.
-- **The audit trail stores decision records only.** Per processed item:
-  processor name, verdict, timestamp, filename, and the reviewer's name
-  once signed off. No extraction content, no label images, no application
-  data — an audit log exists because compliance decisions require
-  accountability, while the prototype still persists nothing sensitive
-  (in-memory, resets on restart).
-- **Two-name sign-off with mismatch awareness.** The processor's name is
-  captured at processing; at sign-off the agent re-enters their name — a
-  deliberate "I attest I reviewed this" action, not a passive click. The
-  button reads "Confirm review complete", not "Approve": it records the
-  agent's review decision and does not issue a COLA approval or touch the
-  real COLA system. Both names are always recorded. When they match, the
-  record reads "Processed and reviewed by X"; when they differ, it reads
-  "Processed by X · Reviewed by Y" with a visual flag and the signer gets
-  a gentle prompt ("This was processed under a different name — did you
-  mean to sign as someone else?"). A mismatch is information, not an
-  error: a genuine two-person review is legitimate and must be captured
-  correctly (separation-of-duties awareness), while the prompt catches
-  the typo case.
+**Lightweight identity, not real auth.** The agent enters a name before
+processing. No passwords or accounts — this is a deliberately minimal
+stand-in that stamps the audit trail; production would use Treasury SSO.
+
+**Two-name attestation.** Sign-off requires re-entering a name — a
+conscious "I reviewed this" act, not a passive click. The button reads
+"Confirm review complete," never "Approve": it records the agent's review
+decision and does not issue a COLA approval or touch the real TTB system.
+The start-name and sign-off-name are always both recorded, and a mismatch
+is flagged as information, not an error — a genuine two-person review is
+legitimate (separation of duties), while a typo in one's own name gets
+caught.
+
+**Two deliberate boundaries.** Error items ("could not be checked") get no
+audit record, because no verdict was rendered — there is no decision to
+attest to; an audit log records decisions. And single-form and batch
+sign-off differ on purpose: processing a single form is a deliberate act
+where the agent is already examining that document, so every verdict
+offers sign-off; batch is triage at volume, where PASS items auto-clear
+untouched, FAIL items are group-acknowledged as going back to the
+applicant, and only NEEDS REVIEW items require individual sign-off.
+Forcing attestation on auto-cleared items would destroy the labor savings
+that are the entire point.
 
 ## Local inference: measured findings (documented, not hidden)
 
@@ -250,6 +298,57 @@ Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
   on thinking models (qwen3-vl) silently returns empty content under
   Ollama 0.32, which is why the non-thinking `qwen2.5vl:7b` is the
   recommended local model.
+
+## Creative problem-solving
+
+**The model reads; the code judges.** Extraction and verification are
+strictly separated, and enforced structurally: the extraction response
+validates against a schema with no field for a verdict, so the model
+cannot render one. Exactness is code's job; reading is the model's.
+
+**Diagnosis before fixes.** When real approved COLAs failed their warning
+checks, the failures were diagnosed rather than patched over. Three
+distinct local-model failure modes were identified — wrong text block
+grabbed (Eaglemount), paraphrased confabulation (Carlo Giacosa's invented
+"SURVEY GENERAL HEALTH AGENCY"), and dropped heading/clause numbers
+(Bärenjäger) — and traced to a resolution-budget mechanism: the whole tall
+page was squeezed into a fixed image-token budget, downsampling the fine
+warning print below legibility. The same pixels, cropped, were trivially
+readable.
+
+**Two-region extraction as the fix.** Rather than a slow second pass, each
+COLA is split at a fixed structural anchor — the boilerplate "AFFIX
+COMPLETE SET OF LABELS BELOW" line — into a form region and a label
+region, each sent as its own concurrent extraction. Because each region is
+a smaller image, each gets the full token budget at higher effective
+resolution. This fixed the warning-reading failures (Eaglemount's warning
+went from absent to verbatim; Carlo's confabulation vanished; Bärenjäger's
+five images separated correctly for the first time) and eliminated
+cross-region field-bleed — which, in turn, revealed that some earlier
+"passes" had been passing on bled data (the whole-page path was importing
+label umlauts into form fields). Removing the bleed made the output more
+honest and surfaced the local model's true fine-print ceiling — precisely
+the case the cloud tier exists to handle.
+
+**Triage as the philosophy, not error handling.** NEEDS REVIEW is the
+product working, not failing. Against ~150,000 applications a year and 47
+agents, the value is letting an agent review a fraction with confidence
+rather than every one by eye. Model uncertainty surfaces as a
+routed-for-review item, not a wrong answer, and the batch summary states
+the auto-clear rate as a measurable claim about labor saved.
+
+**Cost and firewall as design inputs.** Because a production system at
+Treasury's volume makes per-call cost material, and because the internal
+network blocks outbound ML endpoints, inference sits behind a swappable
+interface with a local self-hosted implementation carrying zero marginal
+cost. The public demo additionally applies rate limiting and a spend cap.
+
+**Severity grounded in agency behavior.** A form-to-label discrepancy on a
+cross-checked field returns NEEDS REVIEW; a genuine CFR violation of the
+label returns FAIL. The line is drawn from observed behavior: Bärenjäger
+was approved by TTB despite an alcohol-content discrepancy, so the tool
+does not treat such a discrepancy as more disqualifying than TTB itself
+did.
 
 ## Performance constraint
 
