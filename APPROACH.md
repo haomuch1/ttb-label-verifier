@@ -118,6 +118,37 @@ rate**, not wrong answers — uncertainty routes to a human rather than into a
 verdict. The batch UI surfaces that rate directly ("N of M cleared
 automatically") so labor saved is a measured claim, not a promise.
 
+## Error handling: degrade toward a human, never toward a false PASS
+
+Every failure path is a deliberate choice about where degradation lands:
+
+- **Unsupported file type** → a plain-language message ("Upload a PDF or an
+  image (PNG/JPEG/WebP)"), never a stack trace. Empty files are rejected
+  the same way.
+- **Unreadable PDF** (corrupt, or rendering unavailable) → a graceful
+  message with guidance: "If this is a photo, upload it as an image
+  instead."
+- **A low-quality or unreadable image can never produce a false PASS.**
+  When little or nothing can be read, mandatory elements come back missing
+  and FAIL with named reasons, and uncertain warning transcriptions route
+  to NEEDS REVIEW — degradation always lands on a human's desk, not in an
+  approval. (A distinct "please provide a better image" outcome, rather
+  than missing-element failures, would be the natural next refinement.)
+- **Malformed or unparseable input degrades stepwise, never fatally:**
+  unparseable net-contents statements fall back to loose string comparison;
+  JSON truncated mid-generation by the local model is repaired at the last
+  complete field; a failed region split (anchor not found, tesseract
+  absent, OCR error) falls back to whole-page extraction, as does a failed
+  region call — the enhancement can never leave the app worse than its
+  baseline.
+- **Missing form fields are NOT_APPLICABLE, never failures** — real form
+  revisions differ, and the app does not punish a document for its
+  revision.
+- **In a batch, one bad file cannot sink the rest**: its error is reported
+  inline on its own row while every other file completes.
+- **Rate-limit rejections** state plainly what happened and what to do
+  ("Wait a minute and retry" / "Try again tomorrow").
+
 ## Accountability: identity stamp, audit trail, two-name sign-off
 
 Compliance decisions need to be attributable, so the workflow is built
