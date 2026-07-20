@@ -74,11 +74,41 @@ class TestHealthWarningStrict:
         assert result.verdict == Verdict.FAIL
         assert "(2)" in result.detail
 
-    def test_altered_wording_fails(self):
-        altered = CANONICAL_WARNING.replace("birth defects", "health defects")
+    def test_small_wording_deviation_goes_to_human_not_fail(self):
+        # A one-word difference is within plausible transcription error —
+        # uncertainty becomes triage (NEEDS_REVIEW), not a wrong answer.
+        # Observed live: a local model reading "BIRTH EFFECTS" for
+        # "birth defects".
+        altered = CANONICAL_WARNING.upper().replace("BIRTH DEFECTS", "BIRTH EFFECTS")
         result = check_health_warning([label(government_warning=altered)])
+        assert result.verdict == Verdict.NEEDS_REVIEW
+        assert "similar" in result.detail
+
+    def test_heavily_deviating_text_still_fails(self):
+        result = check_health_warning([label(
+            government_warning="Drink responsibly. Alcohol may be bad for you."
+        )])
         assert result.verdict == Verdict.FAIL
-        assert "deviates" in result.detail
+
+    def test_warning_embedded_in_surrounding_label_text_passes(self):
+        # Extraction sometimes returns the whole label block; the statement
+        # itself is verbatim inside it (observed live with qwen2.5vl).
+        blob = (
+            "Austria's newest rosé combines fruitiness and freshness.\n"
+            + CANONICAL_WARNING.upper()
+            + "\nPRODUCED AND BOTTLED BY WEINKELLEREI, AUSTRIA\n750ML"
+        )
+        result = check_health_warning([label(government_warning=blob)])
+        assert result.verdict == Verdict.PASS
+
+    def test_embedded_near_miss_needs_review(self):
+        blob = (
+            "Some marketing text first.\n"
+            + CANONICAL_WARNING.upper().replace("BIRTH DEFECTS", "BIRTH EFFECTS")
+            + "\nBOTTLER LINE AFTER"
+        )
+        result = check_health_warning([label(government_warning=blob)])
+        assert result.verdict == Verdict.NEEDS_REVIEW
 
     def test_warning_found_on_any_image_in_set(self):
         # Combined-set semantics: warning on image 3 of 5, nowhere else.

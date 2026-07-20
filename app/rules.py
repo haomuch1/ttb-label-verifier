@@ -270,6 +270,60 @@ def check_net_contents_cross(form: FormFields | None, labels: list[LabelImage]) 
 # Standalone compliance (combined label set vs. the CFR)
 # --------------------------------------------------------------------------
 
+# Below this similarity to the statutory text, a mismatched warning is a
+# confident FAIL; at or above it (but not exact) the mismatch is within
+# plausible transcription error and goes to a human instead. Uncertainty
+# becomes triage, not a wrong answer.
+NEAR_MISS_RATIO = 0.90
+
+_VERDICT_RANK = {Verdict.PASS: 0, Verdict.NEEDS_REVIEW: 1, Verdict.FAIL: 2}
+
+
+def _warning_span(norm: str) -> str:
+    """Cut the transcription down to the warning statement itself.
+
+    Extraction sometimes returns the warning embedded in surrounding label
+    text (marketing copy before, bottler line after). The statement starts
+    at 'GOVERNMENT WARNING' when that heading exists; comparisons then use
+    a statute-length window so trailing unrelated text doesn't count
+    against a verbatim statement.
+    """
+    idx = norm.casefold().find("government warning")
+    return norm[idx:] if idx >= 0 else norm
+
+
+def _evaluate_warning(norm: str) -> tuple[Verdict, str]:
+    span = _warning_span(norm)
+    window = span[: len(CANONICAL_WARNING)]
+    if window == CANONICAL_WARNING:
+        return Verdict.PASS, "Warning text matches 27 CFR 16.21 verbatim."
+    if window == CANONICAL_WARNING_ALL_CAPS:
+        return Verdict.PASS, (
+            "Warning text matches 27 CFR 16.21, printed entirely in capitals "
+            "('GOVERNMENT WARNING' heading correctly capitalized; all-caps body "
+            "is accepted practice under 27 CFR 16.22)."
+        )
+    if window.casefold() == CANONICAL_WARNING.casefold():
+        return Verdict.FAIL, (
+            "Warning wording is correct but capitalization violates "
+            "27 CFR 16.21/16.22 — 'GOVERNMENT WARNING:' must appear in capital "
+            f"letters (label prints: '{window[:30]}...')."
+        )
+    loose_window = span[: int(len(CANONICAL_WARNING) * 1.15)]
+    ratio = SequenceMatcher(
+        None, loose_window.casefold(), CANONICAL_WARNING.casefold()
+    ).ratio()
+    if ratio >= NEAR_MISS_RATIO:
+        a, b = _first_divergence(loose_window, CANONICAL_WARNING)
+        return Verdict.NEEDS_REVIEW, (
+            f"Warning text is {ratio:.0%} similar to the statutory text but not "
+            f"exact — label reads '...{a}...' where the statute reads '...{b}...'. "
+            "This is within plausible transcription error; a person should "
+            "verify the warning on the label directly."
+        )
+    return Verdict.FAIL, _diagnose_warning(span)
+
+
 def check_health_warning(labels: list[LabelImage]) -> CheckResult:
     check_id, name = "health_warning", "Government health warning (27 CFR 16.21)"
     candidates = [l.government_warning for l in labels if l.government_warning]
@@ -280,36 +334,17 @@ def check_health_warning(labels: list[LabelImage]) -> CheckResult:
             detail="No government health warning found on any label image.",
         )
 
-    normalized = [normalize_warning(c) for c in candidates]
-    for raw, norm in zip(candidates, normalized):
-        if norm == CANONICAL_WARNING:
-            note = (
-                "" if raw == CANONICAL_WARNING
-                else " (matched after rejoining line-wrapped/hyphenated text)"
-            )
-            return CheckResult(
-                check_id=check_id, name=name, source=CheckSource.STANDALONE,
-                verdict=Verdict.PASS,
-                detail=f"Warning text matches 27 CFR 16.21 verbatim{note}.",
-            )
-    for norm in normalized:
-        if norm == CANONICAL_WARNING_ALL_CAPS:
-            return CheckResult(
-                check_id=check_id, name=name, source=CheckSource.STANDALONE,
-                verdict=Verdict.PASS,
-                detail=(
-                    "Warning text matches 27 CFR 16.21, printed entirely in capitals "
-                    "('GOVERNMENT WARNING' heading correctly capitalized; all-caps body "
-                    "is accepted practice under 27 CFR 16.22)."
-                ),
-            )
-
-    # No candidate matched — diagnose the closest one.
-    best = max(normalized, key=lambda n: SequenceMatcher(None, n, CANONICAL_WARNING).ratio())
+    outcomes = [_evaluate_warning(normalize_warning(c)) for c in candidates]
+    verdict, detail = min(outcomes, key=lambda o: _VERDICT_RANK[o[0]])
+    if verdict == Verdict.PASS:
+        exact_raw = any(
+            c in (CANONICAL_WARNING, CANONICAL_WARNING_ALL_CAPS) for c in candidates
+        )
+        if not exact_raw and detail.endswith("verbatim."):
+            detail = detail[:-1] + " (matched after rejoining line-wrapped/hyphenated text)."
     return CheckResult(
         check_id=check_id, name=name, source=CheckSource.STANDALONE,
-        verdict=Verdict.FAIL,
-        detail=_diagnose_warning(best),
+        verdict=verdict, detail=detail,
     )
 
 

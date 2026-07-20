@@ -61,17 +61,20 @@ Extraction runs behind a pluggable interface. Pick with `EXTRACTOR`:
 ```bash
 # 1. Install Ollama: https://ollama.com/download (Windows/macOS/Linux)
 # 2. Pull a vision model:
-ollama pull qwen3-vl:8b
+ollama pull qwen2.5vl:7b
 # 3. Run the app against it:
-EXTRACTOR=ollama OLLAMA_MODEL=qwen3-vl:8b uvicorn app.main:app --reload
+EXTRACTOR=ollama uvicorn app.main:app --reload
 ```
 
-Recommended model: **`qwen3-vl:8b`** — the Qwen VL family is the strongest
-open-weight line for document OCR and dense text transcription at a size
-that runs on a single consumer GPU (or CPU, slowly), which is exactly this
-workload: reading small print on forms and labels. If it's too heavy for
-your machine, `qwen2.5vl:7b` or `qwen3-vl:4b` are the fallbacks; expect
-transcription quality to drop with size.
+Recommended model: **`qwen2.5vl:7b`** — the Qwen VL family is the strongest
+open-weight line for document OCR at a size that runs on one consumer GPU,
+and the 2.5 generation is a *non-thinking* model, which matters here: we
+first tried `qwen3-vl:8b`, but its thinking mode ruminates for thousands of
+tokens on this task and cannot be disabled under Ollama 0.32 (`think:
+false` silently returns empty output — a live bug we hit), making latency
+and output unreliable. Measured on an RTX 3080, `qwen2.5vl:7b` extracts a
+full COLA in **6–10 seconds warm** (~26s one-time model load). See
+APPROACH.md for measured accuracy and its limits on label artwork.
 
 **PDF uploads** additionally require [poppler](https://poppler.freedesktop.org/)
 (`pdftoppm`) on PATH for page rendering — preinstalled in the Docker image;

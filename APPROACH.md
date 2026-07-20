@@ -116,6 +116,47 @@ rate**, not wrong answers — uncertainty routes to a human rather than into a
 verdict. The batch UI surfaces that rate directly ("N of M cleared
 automatically") so labor saved is a measured claim, not a promise.
 
+## Local inference: measured findings (documented, not hidden)
+
+Validated against the three real COLA fixtures with `qwen2.5vl:7b` under
+Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
+
+- **Latency:** 5.8–9.7s per document warm; ~26s one-time model load. This
+  misses the 5-second target on consumer hardware — the target assumes
+  production GPU serving (e.g. vLLM on a datacenter card) or the hosted
+  API backend; both are the same one-call architecture.
+- **Printed form fields read reliably.** Brand name, product type
+  checkbox, alcohol content, and net contents were extracted correctly on
+  all three filings, including the 6/2006 Carlo Giacosa revision with
+  shifted item numbers.
+- **Label artwork transcription is the weak spot.** The affixed label
+  images in registry printouts are small and low-resolution, and the 7B
+  model makes transcription errors there that a frontier model does not:
+  the government warning came back with dropped headings or one-word
+  misreads ("BIRTH EFFECTS" for "birth defects"), line-break/hyphenation
+  detail was not preserved verbatim, Bärenjäger's five images were merged
+  into four with text bleeding across per-image entries, and Bärenjäger's
+  label ABV was misread as matching the form — so the known 35-vs-39
+  discrepancy was **missed** by the local model (the Anthropic backend
+  validation of the same case is pending account credits). This
+  form-vs-artwork quality split is a documented property of the local
+  backend, not a hidden weakness.
+- **Consequence for verdict design:** the rules engine treats a warning
+  transcription that is ≥90% similar to the statutory text but not exact
+  as NEEDS REVIEW rather than FAIL — plausible transcription error routes
+  to a human instead of becoming a wrong answer. Structural violations
+  (missing heading, missing numbered clauses, title case) and low-similarity
+  text still FAIL. Net effect: the weaker the model, the higher the triage
+  rate — never silently wrong PASSes from the warning check. The batch UI
+  reports the auto-clear rate so the labor-saving claim is measured.
+- **Two Ollama-specific engineering notes** encoded in
+  `app/extractors/ollama_extractor.py`: pydantic's `anyOf`-style JSON
+  schemas silently produce empty output from Ollama's grammar engine (the
+  schema is rewritten to inline nullable type unions), and `think: false`
+  on thinking models (qwen3-vl) silently returns empty content under
+  Ollama 0.32, which is why the non-thinking `qwen2.5vl:7b` is the
+  recommended local model.
+
 ## Performance constraint
 
 Hard requirement: **under 5 seconds** for a single label (warm). A prior vendor
