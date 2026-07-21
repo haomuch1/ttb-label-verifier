@@ -16,9 +16,9 @@ traces to a specific person.
 **Five-second response.** Sarah Chen described a prior vendor pilot that
 took 30–40 seconds per label and died because agents abandoned it: "If we
 can't get results back in about 5 seconds, nobody's going to use it." This
-drove a single round trip per document. (The two-region split later made
-this two concurrent calls — wall-clock stays near the slower of the two,
-preserving the intent.)
+drove a single round trip per document. (Splitting the page into two regions
+later made this two concurrent calls — wall-clock stays near the slower of
+the two, preserving the intent.)
 
 **Simple interface.** Sarah set the bar at "something my mother could
 figure out — she's 73," with half her team over 50. This drove the large
@@ -90,9 +90,9 @@ form fields.
 
 ## Findings from real approved COLAs
 
-The design was corrected against three approved COLAs pulled from TTB's
-Public COLA Registry (Bärenjäger, Carlo Giacosa, Lenz Moser — fixtures in
-`tests/fixtures/`, hand-transcribed scenarios in
+The design was corrected against approved COLAs pulled from TTB's Public
+COLA Registry (Bärenjäger, Carlo Giacosa, Lenz Moser, Eaglemount, 3 Steves
+Winery — fixtures in `tests/fixtures/`, hand-transcribed scenarios in
 `tests/test_real_cola_scenarios.py`):
 
 1. **Item numbers are not stable across form revisions.** Carlo Giacosa's
@@ -201,10 +201,10 @@ Every failure path is a deliberate choice about where degradation lands:
 - **Malformed or unparseable input degrades stepwise, never fatally:**
   unparseable net-contents statements fall back to loose string comparison;
   JSON truncated mid-generation by the local model is repaired at the last
-  complete field; a failed region split (anchor not found, tesseract
-  absent, OCR error) falls back to whole-page extraction, as does a failed
-  region call — the enhancement can never leave the app worse than its
-  baseline.
+  complete field; a failed region split (fraction cut looks wrong, anchor
+  not found, tesseract absent, OCR error) falls back to whole-page
+  extraction, as does a failed region call — the enhancement can never
+  leave the app worse than its baseline.
 - **Missing form fields are NOT_APPLICABLE, never failures** — real form
   revisions differ, and the app does not punish a document for its
   revision.
@@ -250,7 +250,7 @@ that are the entire point.
 
 ## Local inference: measured findings (documented, not hidden)
 
-Validated against the three real COLA fixtures with `qwen2.5vl:7b` under
+Validated against the real COLA fixtures with `qwen2.5vl:7b` under
 Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
 
 - **Latency:** 5.8–9.7s per document warm; ~26s one-time model load. This
@@ -282,43 +282,82 @@ Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
   the weaker the model, the higher the triage rate — never silently wrong
   PASSes from the warning check. The batch UI
   reports the auto-clear rate so the labor-saving claim is measured.
-- **Two-region extraction (the fix that followed the diagnosis).** Every
-  Form 5100.31 prints "AFFIX COMPLETE SET OF LABELS BELOW" between the
-  form and the affixed artwork. The page is split at that anchor (PDFs:
-  text-layer coordinates via pypdf; images: OCR via tesseract) and the
-  two regions are extracted concurrently, each getting the full
-  image-token budget at higher effective resolution; results merge into
-  the same Extraction schema. If the anchor isn't found or either call
-  fails, the app falls back to the single whole-page call — the split is
-  an enhancement over the baseline, never a replacement that can break
-  it. Measured effect on the three fixtures whose warnings previously
-  failed as unreadable: Eaglemount's warning went from absent to
-  **verbatim (PASS)**; Carlo Giacosa's and Bärenjäger's went from
-  garbled hard-FAILs to 96%-similar NEEDS_REVIEW near-misses;
-  Bärenjäger's five label images were separated correctly for the first
-  time, with the warning attributed to one label instead of bleeding
-  across three. Wall-clock ran 6.7–9.2s per document — roughly the
-  slower region, not the sum (concurrent calls measured against
-  sequential: 6.7s vs 12.3s summed on Carlo Giacosa). Honest trade-off
-  also observed: removing the form region ended form-to-label bleed,
-  which had been masking genuinely hard label print — some earlier
-  "passes" were passing on bled data. Eaglemount's tiny front-label ABV
-  line is now missed rather than back-filled from the form, and a
-  follow-up diagnostic showed the bleed also ran form-ward: the
-  whole-page path returned "BÄRENJÄGER" for a form that literally types
-  "BARENJAGER" (umlauts imported from the label artwork), so the split's
-  plain-ASCII read is the *more* faithful one — that real diacritic-only
-  form/label difference is now absorbed by the brand fuzzy matcher
-  (case/punctuation/diacritics fold), which never applies to the warning
-  check. Residual cross-image duplication remains on one fixture
-  (Eaglemount's warning is stamped onto both of its label entries).
-- **Two Ollama-specific engineering notes** encoded in
-  `app/extractors/ollama_extractor.py`: pydantic's `anyOf`-style JSON
-  schemas silently produce empty output from Ollama's grammar engine (the
-  schema is rewritten to inline nullable type unions), and `think: false`
-  on thinking models (qwen3-vl) silently returns empty content under
-  Ollama 0.32, which is why the non-thinking `qwen2.5vl:7b` is the
-  recommended local model.
+
+## Splitting the page: from anchor OCR to a fast fraction cut with fallback
+
+The diagnosis came first. When real approved COLAs failed their warning
+checks under the whole-page path, the cause was a resolution-budget
+mechanism: the whole tall page was squeezed into a fixed image-token budget,
+downsampling the fine warning print below legibility. The same pixels,
+cropped, were trivially readable. The fix is to split each COLA into a form
+region and a label region so each is extracted at full effective
+resolution — the two regions run as concurrent calls, so wall-clock stays
+near the slower one rather than the sum.
+
+**The split point evolved through three measured stages:**
+
+1. **Anchor OCR (first version).** Every Form 5100.31 prints "AFFIX COMPLETE
+   SET OF LABELS BELOW" between the form and the affixed artwork. The first
+   implementation located that line — PDFs via pypdf text coordinates, images
+   via tesseract OCR of the whole page — and split there. It fixed the
+   warning-reading failures, but on the deployed Starter instance (0.5 vCPU)
+   the full-page tesseract OCR was the dominant cost: ~750ms locally,
+   ballooning to ~10–15s in production and pushing per-document time to
+   ~22–33s.
+
+2. **Cheap band OCR.** Rather than OCR the whole page, OCR only the vertical
+   band where the anchor sits, at full resolution — the split crop stays
+   byte-identical to full-page detection (verified by SHA-256), but the OCR
+   is ~25–40% cheaper. An improvement, not a cure: the OCR still dominates on
+   the constrained instance.
+
+3. **Fixed-fraction cut with a warning-aware fallback (deployed).** Measured
+   across five real COLAs, the boilerplate that ends the form region
+   terminates at the same *relative* vertical position — the anchor sits at
+   0.49–0.61 of page height across the fixtures. So the fast default now
+   cuts at a fixed **fraction** of page height (`SPLIT_FRACTION`, default
+   0.5), computed as a proportion of each page's pixel height — DPI- and
+   resolution-independent, no OCR at all (~30ms vs ~750ms, ~20× cheaper).
+   Both regions are cropped from the full-resolution page, so extraction
+   reads are unchanged. A cut at 0.5 lands at or above every observed anchor,
+   preserving the labels intact.
+
+   The fraction cut is a geometric assumption, so it is **guarded, not
+   trusted**: after the cut, a sanity check verifies the form region carries
+   form fields and the label region carries the government warning and enough
+   signal. If the cut looks wrong (e.g. a form with more content pushing the
+   labels below 0.5), that document falls back to the anchor-OCR split; if
+   the anchor also fails, to a single whole-page call. The fast path handles
+   the common case in ~30ms; the OCR only runs on the exception. This is the
+   split that ships.
+
+**Deployed latency result.** On the public Starter instance, replacing
+full-page anchor OCR with the fixed-fraction default dropped per-document
+processing from **~22–33s to ~7s** — roughly 3–4× — while preserving the
+government-warning read (the flagship compliance check). ~7s still misses
+the literal <5s target on the constrained 0.5-vCPU demo instance; <5s
+assumes production GPU serving or a larger instance. The bottleneck removed
+was the OCR, not the model call.
+
+**Honest trade-off from the split itself.** Removing the form region ended
+form-to-label field bleed, which had been masking genuinely hard label
+print — some earlier "passes" were passing on bled data. Eaglemount's tiny
+front-label ABV line is now missed rather than back-filled from the form,
+and the bleed also ran form-ward: the whole-page path returned "BÄRENJÄGER"
+for a form that literally types "BARENJAGER" (umlauts imported from the
+label artwork), so the split's plain-ASCII read is the *more* faithful one —
+that real diacritic-only form/label difference is now absorbed by the brand
+fuzzy matcher (case/punctuation/diacritics fold), which never applies to the
+warning check. Residual cross-image duplication remains on one fixture
+(Eaglemount's warning is stamped onto both of its label entries).
+
+**Two Ollama-specific engineering notes** encoded in
+`app/extractors/ollama_extractor.py`: pydantic's `anyOf`-style JSON
+schemas silently produce empty output from Ollama's grammar engine (the
+schema is rewritten to inline nullable type unions), and `think: false`
+on thinking models (qwen3-vl) silently returns empty content under
+Ollama 0.32, which is why the non-thinking `qwen2.5vl:7b` is the
+recommended local model.
 
 ## Model tier trade-offs
 
@@ -337,12 +376,15 @@ latency as the tie-breaker.
 
 Notes on the numbers, stated honestly:
 
-- **Latency:** the figures are warm single-document wall-clock. First-run
-  measurements of the five-image Bärenjäger document showed 80–120s on
-  *every* hosted tier (near-identical across Haiku/Sonnet/Opus) — an
-  Anthropic API retry/overload transient, not model compute; a re-measure
-  put Haiku's Bärenjäger at **8.1s**. The local model is GPU-bound on an
-  RTX 3080; hosted latency is network + model.
+- **Latency:** the figures are warm single-document wall-clock for the
+  extraction call. First-run measurements of the five-image Bärenjäger
+  document showed 80–120s on *every* hosted tier (near-identical across
+  Haiku/Sonnet/Opus) — an Anthropic API retry/overload transient, not model
+  compute; a re-measure put Haiku's Bärenjäger at **8.1s**. The local model
+  is GPU-bound on an RTX 3080; hosted latency is network + model. These are
+  extraction-call figures; end-to-end per-document time on the deployed
+  Starter instance is ~7s once the fixed-fraction split removed the OCR cost
+  (see split section above).
 - **Warning reads are what decided it.** Haiku returned all three warnings
   verbatim (clean PASS, zero spurious near-misses) — cleaner than Sonnet-5
   and Opus, which each dropped a single period ("...BIRTH DEFECTS  (2)...")
@@ -364,8 +406,9 @@ Notes on the numbers, stated honestly:
 government warning (3/3 verbatim, zero spurious near-misses — better than
 both larger models), so it best avoids reproducing the slow prior-vendor
 experience without degrading the flagship check. `EXTRACTION_MODEL` in
-`render.yaml` selects it; a reviewer wanting maximum transcription accuracy
-on tiny label print can override to Sonnet-5 or Opus at a latency cost.
+`render.yaml` selects it (pinned to the dated snapshot); a reviewer wanting
+maximum transcription accuracy on tiny label print can override to Sonnet-5
+or Opus at a latency cost.
 
 ## Creative problem-solving
 
@@ -384,19 +427,22 @@ page was squeezed into a fixed image-token budget, downsampling the fine
 warning print below legibility. The same pixels, cropped, were trivially
 readable.
 
-**Two-region extraction as the fix.** Rather than a slow second pass, each
-COLA is split at a fixed structural anchor — the boilerplate "AFFIX
-COMPLETE SET OF LABELS BELOW" line — into a form region and a label
-region, each sent as its own concurrent extraction. Because each region is
-a smaller image, each gets the full token budget at higher effective
-resolution. This fixed the warning-reading failures (Eaglemount's warning
-went from absent to verbatim; Carlo's confabulation vanished; Bärenjäger's
-five images separated correctly for the first time) and eliminated
-cross-region field-bleed — which, in turn, revealed that some earlier
-"passes" had been passing on bled data (the whole-page path was importing
-label umlauts into form fields). Removing the bleed made the output more
-honest and surfaced the local model's true fine-print ceiling — precisely
-the case the cloud tier exists to handle.
+**Splitting the page, then making the split cheap.** The fix was to split
+each COLA into a form region and a label region so each gets the full token
+budget at higher effective resolution. That fixed the warning-reading
+failures (Eaglemount's warning went from absent to verbatim; Carlo's
+confabulation vanished; Bärenjäger's five images separated correctly for the
+first time) and eliminated cross-region field-bleed — which, in turn,
+revealed that some earlier "passes" had been passing on bled data. The split
+mechanism was then optimized under measurement: OCR-based anchor detection
+was the correct first cut but too slow on the constrained deployment
+instance, so it was replaced by a fixed-fraction cut (a proportion of page
+height, DPI-independent, no OCR) as the fast default, with the anchor OCR
+kept as a warning-aware fallback for the case the fraction cut mishandles.
+The result cut deployed per-document time ~3–4× (~22–33s → ~7s) without
+touching a single read (see split section). Measuring before deciding — the
+fraction cut was validated on all fixtures, and shipped only after the
+warning read held — is the through-line.
 
 **Triage as the philosophy, not error handling.** NEEDS REVIEW is the
 product working, not failing. Against ~150,000 applications a year and 47
@@ -427,18 +473,22 @@ deterministically, so that FAILs.
 Hard requirement: **under 5 seconds** for a single label (warm). A prior vendor
 pilot failed at 30–40 seconds and that is the stated reason it died. Hence: one
 extraction round trip per document — two *concurrent* region calls when the
-page splits at the form/label anchor (wall-clock ≈ the slower of the two),
-a single whole-page call otherwise; never sequential chaining. Batch mode
-fans out concurrently with `asyncio.gather` under a semaphore.
+page splits into a form region and a label region (wall-clock ≈ the slower of
+the two), a single whole-page call otherwise; never sequential chaining. The
+split point is a fast fixed-fraction cut by default (no OCR), so the split
+itself adds ~30ms rather than the ~750ms of full-page anchor OCR — the change
+that brought deployed per-document time to ~7s on the Starter instance. Batch
+mode fans out concurrently with `asyncio.gather` under a semaphore.
 
 ## Tools used
 
 - Claude Code (agentic development)
 - Python / FastAPI, plain static HTML frontend (no build step)
 - Pluggable vision extraction: Ollama + qwen2.5vl:7b (local, default) or
-  the Anthropic API (claude-haiku-4-5), both schema-constrained
+  the Anthropic API (claude-haiku-4-5-20251001), both schema-constrained
 - pdf2image / poppler for PDF rendering; pypdf for page classification and
-  PDF anchor coordinates; tesseract OCR for the image anchor split
+  PDF anchor coordinates; tesseract OCR for the anchor-fallback split on
+  image uploads
 - Render (Starter plan, always-on) for deployment
 
 ## Assumptions
@@ -448,6 +498,9 @@ fans out concurrently with `asyncio.gather` under a semaphore.
 - The static instruction pages of a 5100.31 PDF (pages 2–5 on the 04/2023
   revision) are skipped by matching their boilerplate text, not by page
   number; pages with no text layer are kept rather than guessed at.
+- The fixed-fraction split assumes a standard 5100.31 layout at standard
+  aspect ratio; a non-standard page that mis-splits is caught by the
+  sanity check and routed to the anchor-OCR or whole-page fallback.
 - No persistence beyond the in-memory audit log of decision records
   (which itself resets on restart); label images and application content
   are never stored.
@@ -463,8 +516,63 @@ fans out concurrently with `asyncio.gather` under a semaphore.
   inference or an allow-listed endpoint. The architecture isolates the
   inference call behind a single interface, so the backend can be swapped
   without touching the rule engine.
+- **The fixed-fraction split is tuned to observed 5100.31 layouts.** Across
+  the fixtures the form/label boundary sits at 0.49–0.61 of page height, and
+  the 0.5 default cuts safely above the lowest anchor. A form revision whose
+  boundary sits below 0.5 would mis-split on the fast path — which is exactly
+  why the mis-split sanity check and the anchor-OCR fallback exist. The fast
+  path is an optimization guarded by the slower-but-robust one, never a
+  replacement for it.
+- **Residual cross-image duplication on one fixture.** Eaglemount's warning
+  is currently stamped onto both of its label entries — read correctly, but
+  duplicated. It is included in the batch fixtures as an honest edge case.
 - Verdicts are advisory: NEEDS REVIEW exists precisely because a human agent
   makes the final call.
+
+## Safety validation: the failure mode is conservative
+
+The central safety question for a compliance tool is not "is it always
+right" — no reader of low-resolution label print is — but "when it is wrong,
+which way does it fail." A tool that occasionally over-flags a compliant
+label wastes an agent's minute; a tool that occasionally clears a
+non-compliant one defeats its purpose. This tool is designed, and was
+validated, to fail only in the first direction.
+
+**Validated empirically.** The three real fixtures were each run five times
+against the deployed model (`claude-haiku-4-5-20251001`) — fifteen runs on
+identical input — to observe run-to-run variation directly. In all fifteen,
+the government warning was read (never lost). Every PASS that occurred landed
+on a genuinely compliant warning — a correct PASS, not a false one. The
+run-to-run variation moved only between a correct PASS and a conservative
+over-flag (NEEDS REVIEW or FAIL); it never moved toward a false clear. When
+the model erred on the tiny print, it erred by *degrading* compliant text
+into a near-miss or mismatch — routing to a human — not by manufacturing a
+clean warning.
+
+**Guaranteed structurally.** The empirical result follows from the
+architecture rather than luck. The warning check is deterministic: code
+compares the extracted text against the stored canonical 27 CFR 16.21 string
+and returns PASS only on an exact match (statutory mixed case or all-caps);
+near-miss → NEEDS REVIEW; title case, dropped clauses, or low similarity →
+FAIL. The judging layer cannot pass a non-compliant warning it is given,
+because it is code applying a fixed rule, not a model exercising discretion.
+The independent review (below) reached the same conclusion by reading the
+logic: no false PASS on a violating label is reachable.
+
+**The one residual, stated honestly.** The deterministic check protects the
+*judging* step, not the *reading* step. The only theoretical path to an
+unsafe false-clear is upstream: the vision model hallucinating the exact
+compliant statutory text where a label actually printed a non-compliant
+warning — silently "correcting" a title-case or truncated warning into the
+canonical string before the code ever sees it. This was **not observed** in
+any run (every error ran the opposite direction, toward over-flagging), and
+it is mitigated by design (the extraction prompt instructs verbatim
+transcription, never correction or completion). It cannot be called
+impossible — only unobserved here and structurally discouraged. These
+fixtures cannot exercise it, because all three warnings are genuinely
+compliant; a deliberately non-compliant fixture would be the natural next
+test. Naming this limit is the point: it is exactly where the tool's
+controls end, and where a human still owns the risk.
 
 ## Independent review
 
@@ -479,7 +587,7 @@ The review found no critical issues and confirmed the core compliance engine
 is sound — it could not produce a false PASS on a violating label; the strict
 government-warning comparison correctly FAILs title-case and dropped-clause
 violations and does not pass garbled text; the fuzzy brand and net-contents
-matching does not pass genuinely different values; and the two-region split
+matching does not pass genuinely different values; and the region split
 degrades safely to whole-page extraction on any failure. Secrets posture,
 input handling, and the frontend (no XSS surface) were confirmed clean.
 

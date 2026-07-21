@@ -25,8 +25,22 @@ Built as a take-home assessment prototype for a U.S. Treasury IT Specialist
 design decisions, measured results, and honestly-stated limitations.
 
 **Live demo:** <https://ttb-label-verifier-nnqf.onrender.com> — always-on
-(Render Starter plan, no spin-down), so requests are served warm. See
+(Render Starter plan, no spin-down), so requests are served warm. Per-document
+processing runs ~7 seconds on the demo instance. See
 [Deployment](#deployment-render).
+
+## Two ways to use it — your choice, both work
+
+- **Just open the live URL** above. Nothing to install, no key, no setup — it
+  already runs the hosted Anthropic backend. This is the easiest way to try
+  it and is all a reviewer needs.
+- **Run it locally with Ollama**, if you'd rather keep everything on your own
+  machine and it's capable enough (one consumer GPU). This is the fully
+  local, no-key, no-cost path — see [Setup and run](#setup-and-run) below.
+
+Both give the same tool and the same checks. The live URL is the fast path;
+local is there if you want to see the self-hosted, nothing-leaves-your-machine
+posture the production design is built around.
 
 ## What it checks
 
@@ -57,10 +71,17 @@ fails):
 **The model extracts, code judges.** A vision model returns structured JSON
 of verbatim text and observations — the schema has no field for a verdict —
 and deterministic Python applies every rule. One extraction round trip per
-document (the page is split at the form/label boundary and the two regions
-are read concurrently; if the split fails, the whole page goes as one call).
+document: the page is split into a form region and a label region so each is
+read at full resolution — a fast fixed-fraction cut by default (a proportion
+of page height, no OCR), falling back to OCR-based anchor detection only when
+that cut looks wrong, and to a single whole-page call if both fail.
 
 ## Setup and run
+
+You only need this if you want to run the tool **locally** — to try it at all,
+just open the [live URL](#two-ways-to-use-it--your-choice-both-work). Running
+locally uses the Ollama backend so everything stays on your machine (no key,
+no account, no cost).
 
 Requires Python 3.11+. Clone, then:
 
@@ -70,15 +91,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Then pick an inference backend via the `EXTRACTOR` environment variable:
-
-| `EXTRACTOR` | Needs | Character |
-|---|---|---|
-| `ollama` (default) | A local [Ollama](https://ollama.com) server | No API key, no account, no cost, nothing leaves your machine |
-| `anthropic` | `ANTHROPIC_API_KEY` | Fastest and most accurate; used by the cloud demo |
-| `mock` | Nothing | Canned fixture data — UI/dev/testing with zero inference |
-
-### Option A — fully local with Ollama (no key, no cost)
+### Run locally with Ollama (no key, no cost)
 
 ```bash
 # 1. Install Ollama: https://ollama.com/download  (Windows/macOS/Linux)
@@ -89,6 +102,9 @@ EXTRACTOR=ollama uvicorn app.main:app --reload
 #    (PowerShell:  $env:EXTRACTOR="ollama"; uvicorn app.main:app --reload)
 ```
 
+Then open **http://127.0.0.1:8000** (your local instance; health check at
+`/health`).
+
 Recommended model: **`qwen2.5vl:7b`** — the Qwen VL family is the strongest
 open-weight line for document OCR at a size that runs on one consumer GPU,
 and the 2.5 generation is a *non-thinking* model, which matters here: we
@@ -98,26 +114,29 @@ false` silently returns empty output — a live bug we hit). Measured on an
 RTX 3080: **6–10 seconds per COLA warm**, ~26s one-time model load. See
 APPROACH.md for measured accuracy and its limits on fine label print.
 
-### Option B — Anthropic API
+### Backends, for reference
 
-```bash
-cp .env.example .env        # put your key in .env: ANTHROPIC_API_KEY=sk-ant-...
-EXTRACTOR=anthropic uvicorn app.main:app --reload
-```
+Inference is chosen by the `EXTRACTOR` environment variable — you don't need
+to set this to use the tool (the live URL already runs `anthropic`, local runs
+`ollama`), but for completeness:
 
-The key is read server-side only and never reaches the browser.
-
-Open **http://127.0.0.1:8000** (health check at `/health`).
+| `EXTRACTOR` | Needs | Character |
+|---|---|---|
+| `ollama` (default) | A local [Ollama](https://ollama.com) server | No API key, no account, no cost, nothing leaves your machine — the local path above |
+| `anthropic` | `ANTHROPIC_API_KEY` in `.env` | The hosted backend the live demo runs; self-hostable with your own key |
+| `mock` | Nothing | Canned fixture data — UI/dev/testing with zero inference |
 
 ### Optional system dependencies
 
 - **PDF uploads** need [poppler](https://poppler.freedesktop.org/)
   (`pdftoppm`) for page rendering. Preinstalled in the Docker image; on
   Windows point `POPPLER_PATH` at poppler's `bin` folder.
-- **Two-region extraction on image uploads** uses
-  [tesseract](https://github.com/tesseract-ocr/tesseract) to find the
-  form/label boundary (`TESSERACT_CMD` on Windows if not on PATH). Without
-  it the app still works — it falls back to whole-page extraction.
+- **Anchor-fallback on image uploads** uses
+  [tesseract](https://github.com/tesseract-ocr/tesseract) to locate the
+  form/label boundary when the fast fixed-fraction split looks wrong
+  (`TESSERACT_CMD` on Windows if not on PATH). Without it the app still
+  works — the fraction split is the default and a failed split falls back to
+  whole-page extraction.
 
 ## Using it
 
@@ -147,8 +166,31 @@ untouched, and failed items are acknowledged as a group ("Mark as seen").
 
 ## Try it with real COLAs
 
-Three approved applications from TTB's Public COLA Registry are included
-as fixtures — upload them from `tests/fixtures/`:
+You can test with real COLAs two ways: pull your own fresh ones from TTB's
+public registry, or use the five already included in this repo. Either works.
+
+### Pull your own from the TTB Public COLA Registry
+
+Every real approved COLA is public record. To capture one as a PNG the tool
+can read:
+
+1. Go to TTB COLAs Online public search:
+   <https://ttbonline.gov/colasonline/publicPageBasicCola.do?action=page>
+2. Enter a **completed-date range** and search — for example,
+   `07/01/2025` to `07/20/2026`.
+3. Click a **TTB ID** link in the results.
+4. Click the **printable version** link.
+5. **Screenshot the printable view** — capture the entire application, keeping
+   even margins — and save it as a PNG. That screenshot is your test image.
+
+(This is a manual screenshot of one public printable page, not an automated
+or bulk download — capture the rendered view as an image.)
+
+### Or use the five included fixtures
+
+Five real approved applications, captured this way from the Public COLA
+Registry, are included as PNG fixtures. Three are set up for single-file
+testing in their own folders under `tests/fixtures/`:
 
 - `tests/fixtures/barenjager/` — five label images with mandatory info
   scattered across them: the combined-set case, where the app must read
@@ -158,8 +200,16 @@ as fixtures — upload them from `tests/fixtures/`:
 - `tests/fixtures/lenz-moser/` — a health warning printed in all capitals
   and hyphenated across a line break.
 
-Batch all of them at once from `tests/fixtures/Batch Test/` to see the
-triage summary render.
+**Batch test.** `tests/fixtures/Batch Test/` holds five COLAs — the three
+above plus two more, so you can run a mixed batch and watch the triage
+summary render:
+
+- **Eaglemount** — included as an honest edge case. Its warning reads
+  correctly, but the extraction still duplicates that warning across both
+  of its label entries — the one residual known issue (see APPROACH.md,
+  two-region findings).
+- **3 Steves Winery** — an additional public-registry sample for extra
+  batch coverage.
 
 ## Tests
 
@@ -168,11 +218,12 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-137 tests, all offline (the mock backend): normalization edge cases
+145 tests, all offline (the mock backend): normalization edge cases
 (wrapped/hyphenated warning text, case preservation, diacritics, net-content
 quantities), the rules engine, hand-transcribed scenarios of the real COLAs
-above, PDF page classification and the page cap, the region-split pipeline
-with its fallbacks, the API surface, rate limiting (including spoofed
+above, PDF page classification and the page cap, the split pipeline
+(fixed-fraction default, mis-split detection, anchor fallback, whole-page
+fallback), the API surface, rate limiting (including spoofed
 X-Forwarded-For and the request-body cap), and the audit trail.
 
 ## Rate limits
@@ -186,8 +237,10 @@ restart; nothing is persisted.
 
 Deployed from this repo via `render.yaml` (Docker; poppler and tesseract
 included in the image). The public demo runs `EXTRACTOR=anthropic` on the
-`claude-haiku-4-5` model — set `ANTHROPIC_API_KEY` in the Render dashboard;
-it lives server-side only.
+pinned `claude-haiku-4-5-20251001` model (`EXTRACTION_MODEL` in
+`render.yaml`) — set `ANTHROPIC_API_KEY` in the Render dashboard; it lives
+server-side only. Per-document processing runs ~7 seconds on the demo's
+Starter instance.
 
 > **Always-on:** the demo runs on Render's Starter plan, so it does not
 > spin down and there is no first-request cold start — requests are served
