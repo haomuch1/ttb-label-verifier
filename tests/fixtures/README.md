@@ -13,11 +13,11 @@ tests/fixtures/
 
 Why these three earn their place:
 
-- **Bärenjäger** — form says Alcohol Content `35`, both labels say
-  `39% ALC / VOL`: a genuine 4-point form-to-label discrepancy on an
-  approved COLA. Expected app result: **NEEDS REVIEW** with the ABV
-  cross-check flagged. Also exercises combined-set checking (mandatory
-  info scattered across images 1–3; images 4–5 carry no regulated text).
+- **Bärenjäger** — five affixed images with mandatory info scattered
+  across them (brand on image 1, ABV/net contents on image 2, the warning
+  on image 3; images 4–5 carry no regulated text). Form and labels both
+  read 35% ALC/VOL. Exercises combined-set checking — the app must treat
+  all five images as one set, since no single image carries everything.
 - **Carlo Giacosa** — older form revision with shifted item numbers;
   guards against extracting by item number.
 - **Lenz Moser** — warning printed in all capitals and hyphenated across

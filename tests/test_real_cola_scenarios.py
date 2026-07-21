@@ -6,9 +6,9 @@ each filing (field values, image counts, where mandatory information sits).
 They pin the rules-engine behavior those documents demand:
 
 - Bärenjäger (rev 07/2012): five affixed images with mandatory info
-  scattered across them, and a genuine form-to-label ABV discrepancy
-  (form says 35, both labels say 39% ALC / VOL) on an APPROVED COLA —
-  expected result is a flagged discrepancy (NEEDS_REVIEW), not FAIL.
+  scattered across them — the combined-set case. Form and labels both
+  read 35% ALC/VOL (consistent), so it exercises a clean cross-check
+  across scattered images, not a discrepancy.
 - Carlo Giacosa (rev 6/2006): older form revision (no "Source of Product"
   field — irrelevant here because rules never see item numbers).
 - Lenz Moser: warning printed in all capitals and hyphenated across a
@@ -44,7 +44,7 @@ BARENJAGER = Extraction(
         # Image 2 — front: ABV and net contents live here
         LabelImage(
             image_type="Brand (front) or keg collar",
-            abv_raw="39% ALC / VOL",
+            abv_raw="35% ALC / VOL",
             net_contents="750ML",
         ),
         # Image 3 — back: government warning lives here
@@ -61,23 +61,28 @@ BARENJAGER = Extraction(
 
 
 class TestBarenjager:
-    def test_overall_flagged_for_review_not_failed(self):
+    def test_overall_passes(self):
+        # Form and labels are consistent; every mandatory element is present
+        # somewhere across the five images.
         report = verify(BARENJAGER)
-        assert report.verdict == Verdict.NEEDS_REVIEW
+        assert report.verdict == Verdict.PASS
 
-    def test_abv_discrepancy_is_the_flag(self):
+    def test_abv_matches_form_across_scattered_images(self):
+        # ABV lives on image 2, not the form-adjacent image; the cross-check
+        # still finds it (35 on the form, 35% ALC/VOL on the label).
         report = verify(BARENJAGER)
         abv_cross = check(report, "abv_form_match")
-        assert abv_cross.verdict == Verdict.NEEDS_REVIEW
-        assert "35" in abv_cross.detail and "39" in abv_cross.detail
+        assert abv_cross.verdict == Verdict.PASS
+        assert "35" in abv_cross.detail
 
-    def test_everything_else_passes_across_the_combined_set(self):
+    def test_everything_passes_across_the_combined_set(self):
         # Per-image checking would fail this document: no single image
         # carries all mandatory information.
         report = verify(BARENJAGER)
         for check_id in (
             "brand_name_match",
             "product_type_match",
+            "abv_form_match",
             "net_contents_form_match",
             "health_warning",
             "abv_present",

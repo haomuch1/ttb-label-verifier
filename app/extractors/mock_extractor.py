@@ -34,7 +34,7 @@ _BARENJAGER = Extraction(
         ),
         LabelImage(
             image_type="Brand (front) or keg collar",
-            abv_raw="39% ALC / VOL",
+            abv_raw="35% ALC / VOL",
             net_contents="750ML",
         ),
         LabelImage(

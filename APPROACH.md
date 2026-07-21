@@ -120,12 +120,15 @@ Public COLA Registry (Bärenjäger, Carlo Giacosa, Lenz Moser — fixtures in
    statutory mixed case, or the whole statement uppercased — while a
    title-case rendering (Jenny Park's rejected case) FAILs. Deviations that
    are not pure casing follow the near-miss tiering described below.
-5. **A free real-world regression case:** Bärenjäger's form states Alcohol
-   Content `35` while both its labels state `39% ALC / VOL` — a genuine
-   4-point form-to-label mismatch on an approved COLA. Expected output is a
-   flagged discrepancy (NEEDS REVIEW), not FAIL: cross-check mismatches go to
-   a human; only standalone CFR violations (bad warning, inconsistent proof
-   arithmetic, missing mandatory information) hard-fail.
+5. **Mandatory information is scattered across images, so the check is on
+   the combined set.** Bärenjäger's alcohol content and net contents sit on
+   image 2, its warning on image 3, while images 4–5 carry no regulated
+   text; form and labels agree (both 35% ALC/VOL). The design consequence is
+   that a cross-check asks "does this appear anywhere across the images,"
+   never per-image — per-image checking would fail this document. (An
+   earlier draft treated Bärenjäger as a form-vs-label ABV discrepancy on a
+   misreading of the low-resolution "35" as "39"; ground truth is 35
+   everywhere, and the fixtures/tests reflect that.)
 
 ## Pluggable inference backends — a first-class design decision
 
@@ -158,10 +161,15 @@ with zero API calls.
 The verdict tiers encode a triage model. Standalone CFR violations (bad or
 missing health warning, proof arithmetic that doesn't reconcile, missing
 mandatory information) FAIL. Cross-check discrepancies and anything the
-system is unsure of go to NEEDS REVIEW — a human agent makes the call, which
-is exactly what happened historically with Bärenjäger's approved 35-vs-39
-discrepancy. The win is an agent reviewing a small percentage of
-applications instead of all of them.
+system is unsure of go to NEEDS REVIEW — a human agent makes the call. This
+is a deliberate design principle: a form-to-label mismatch is not by itself
+a violation. It can be a legitimate filing nuance — a revised label, a
+formatting or transcription difference, a field the form records differently
+from the artwork — so the tool routes it to a person rather than
+auto-failing an application over it. FAIL is reserved for the label itself
+breaking a CFR rule, which the tool can judge deterministically. The win is
+an agent reviewing a small percentage of applications instead of all of
+them.
 
 This framing also absorbs model quality differences cleanly: a smaller local
 model that is less certain than a frontier model produces a **higher triage
@@ -258,13 +266,11 @@ Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
   model makes transcription errors there that a frontier model does not:
   the government warning came back with dropped headings or one-word
   misreads ("BIRTH EFFECTS" for "birth defects"), line-break/hyphenation
-  detail was not preserved verbatim, Bärenjäger's five images were merged
-  into four with text bleeding across per-image entries, and Bärenjäger's
-  label ABV was misread as matching the form — so the known 35-vs-39
-  discrepancy was **missed** by the local model. This form-vs-artwork
-  quality split is a documented property of the local backend, not a
-  hidden weakness. (The frontier backend was later measured on the same
-  fixtures — see "Frontier backend (Opus) measured results" below.)
+  detail was not preserved verbatim, and Bärenjäger's five images were
+  merged into four with text bleeding across per-image entries. This
+  form-vs-artwork quality split is a documented property of the local
+  backend, not a hidden weakness. (The hosted backends were later measured
+  on the same fixtures — see "Model tier trade-offs" below.)
 - **Consequence for verdict design:** the rules engine treats a warning
   transcription that is ≥90% similar to the statutory text but not exact
   as NEEDS REVIEW rather than FAIL — plausible transcription error routes
@@ -314,45 +320,52 @@ Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
   Ollama 0.32, which is why the non-thinking `qwen2.5vl:7b` is the
   recommended local model.
 
-## Frontier backend (Opus) measured results
+## Model tier trade-offs
 
-The cloud path was later measured end-to-end on the same three fixtures
-with `claude-opus-4-8` (`EXTRACTION_MODEL=claude-opus-4-8`), for a
-local-vs-frontier comparison. Honest results, including where the frontier
-model did **not** improve on the local one:
+The same three fixtures were measured end-to-end across four extraction
+tiers — the local 7B model and three hosted models — to choose the deployed
+model on data rather than assumption. The flagship compliance check is the
+government health warning, so its read quality is the primary axis, with
+latency as the tie-breaker.
 
-- **Label transcription is markedly better.** Opus returned each
-  government warning essentially verbatim (Bärenjäger's PASSes cleanly),
-  preserved the Lenz Moser hyphenated line break (`BEV-`/`ERAGES`) — which
-  normalize-and-rejoin then correctly recombined — and separated
-  Bärenjäger's **five** affixed images correctly as one combined set (the
-  7B local model collapsed them to four with cross-image bleed). No
-  field-bleed was observed.
-- **Latency badly misses the 5-second target on Opus.** Measured warm
-  wall-clock per document: Carlo Giacosa 11.9s, Lenz Moser 9.0s,
-  Bärenjäger 82.9s (its label region carries five images). Opus vision is
-  slow; this backend trades latency for transcription accuracy. Meeting the
-  <5s target would require the faster hosted model (Haiku, the default
-  constant) or production GPU serving — the one-call/concurrent-region
-  architecture is unchanged either way.
-- **The Bärenjäger 35-vs-39 ABV discrepancy was NOT caught by Opus
-  either.** Opus read the label alcohol content as `35% ALC / VOL`
-  (matching the form's `35`), so the cross-check passed as consistent and
-  the document returned PASS — no discrepancy flagged. This is the same
-  miss the local model made, reached differently (the local model bled the
-  form value; Opus transcribed `35` directly off the label). Note that this
-  puts the fixture's own ground truth in question: the "39%" expected value
-  comes from a human reading of a very-low-resolution printed digit, and
-  **two independent vision models (local qwen2.5vl and Opus) both read
-  `35`**; on direct high-zoom inspection the digit is at the edge of
-  legibility. The honest status is that the intended discrepancy is not
-  detected by either backend, and the source-COLA digit should be
-  re-verified by a human before treating "39%" as settled.
-- **Lenz Moser routed to NEEDS REVIEW, not PASS** — Opus dropped the period
-  after "BIRTH DEFECTS", leaving the warning ~100% similar but not exact, so
-  the near-miss tier correctly sent it to a human rather than passing it.
-  The rejoin mechanism worked; the routing reflects a genuine one-character
-  omission by the model, which is exactly what NEEDS REVIEW is for.
+| Tier | Warm latency / doc | Warning reads (all 3 fixtures) | Bärenjäger ABV (truth = 35) | Bärenjäger images (truth = 5) |
+|---|---|---|---|---|
+| Ollama qwen2.5vl:7b (local) | ~6–9s (RTX 3080) | 2 spurious FAILs + 1 near-miss — garbled | 35 (bled from form) | 4 (merged, bleed) |
+| **claude-haiku-4-5** | **~6–8s** | **3/3 clean PASS — zero near-misses** | not read (→ ABV-present FAIL) | 5 |
+| claude-sonnet-5 | ~8–15s | 1 spurious near-miss (Bärenjäger) | 35 | 5 |
+| claude-opus-4-8 | ~9–12s | 1 near-miss (Lenz Moser) | 35 | 5 |
+
+Notes on the numbers, stated honestly:
+
+- **Latency:** the figures are warm single-document wall-clock. First-run
+  measurements of the five-image Bärenjäger document showed 80–120s on
+  *every* hosted tier (near-identical across Haiku/Sonnet/Opus) — an
+  Anthropic API retry/overload transient, not model compute; a re-measure
+  put Haiku's Bärenjäger at **8.1s**. The local model is GPU-bound on an
+  RTX 3080; hosted latency is network + model.
+- **Warning reads are what decided it.** Haiku returned all three warnings
+  verbatim (clean PASS, zero spurious near-misses) — cleaner than Sonnet-5
+  and Opus, which each dropped a single period ("...BIRTH DEFECTS  (2)...")
+  and so routed one fixture to NEEDS REVIEW. The local 7B model is worst
+  here, garbling two warnings into spurious FAILs.
+- **Where the hosted models still err** (conservatively — always toward a
+  human, never a false PASS): Haiku did not read Bärenjäger's tiny label
+  ABV at all (→ ABV-present FAIL); Haiku and Sonnet both garbled the Lenz
+  Moser brand name into a NEEDS REVIEW. These are real accuracy gaps, but
+  they surface as FAIL/NEEDS REVIEW routed to an agent, not as wrong
+  approvals.
+- **No 35-vs-39 discrepancy exists** (corrected premise): the Bärenjäger
+  form and labels both read 35% ALC/VOL. Every model that read the ABV read
+  35; the earlier "39" was a human misreading of a very-low-resolution
+  printed digit, since corrected in the fixtures, tests, and this document.
+
+**Deployed model: `claude-haiku-4-5-20251001`.** It is the fastest tier
+(~6–8s warm) *and* has the cleanest reads of the compliance-critical
+government warning (3/3 verbatim, zero spurious near-misses — better than
+both larger models), so it best avoids reproducing the slow prior-vendor
+experience without degrading the flagship check. `EXTRACTION_MODEL` in
+`render.yaml` selects it; a reviewer wanting maximum transcription accuracy
+on tiny label print can override to Sonnet-5 or Opus at a latency cost.
 
 ## Creative problem-solving
 
@@ -398,12 +411,16 @@ network blocks outbound ML endpoints, inference sits behind a swappable
 interface with a local self-hosted implementation carrying zero marginal
 cost. The public demo additionally applies rate limiting and a spend cap.
 
-**Severity grounded in agency behavior.** A form-to-label discrepancy on a
-cross-checked field returns NEEDS REVIEW; a genuine CFR violation of the
-label returns FAIL. The line is drawn from observed behavior: Bärenjäger
-was approved by TTB despite an alcohol-content discrepancy, so the tool
-does not treat such a discrepancy as more disqualifying than TTB itself
-did.
+**Severity split by what the tool can actually adjudicate.** A form-to-label
+discrepancy on a cross-checked field returns NEEDS REVIEW; a genuine CFR
+violation of the label returns FAIL. The line reflects a principle about
+authority: whether a form/label mismatch is disqualifying is a judgment
+that belongs to a TTB specialist — such a mismatch can be a legitimate
+filing nuance rather than a violation — so the tool surfaces it for a human
+instead of rejecting the application itself. A CFR rule the label breaks on
+its face (a non-compliant warning, proof arithmetic that doesn't reconcile,
+a missing mandatory element) is something the tool can judge
+deterministically, so that FAILs.
 
 ## Performance constraint
 

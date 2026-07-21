@@ -149,9 +149,9 @@ untouched, and failed items are acknowledged as a group ("Mark as seen").
 Three approved applications from TTB's Public COLA Registry are included
 as fixtures — upload them from `tests/fixtures/`:
 
-- `tests/fixtures/barenjager/` — five label images, and a genuine
-  form-to-label discrepancy on an approved COLA (form says 35, labels say
-  39% ABV): the case NEEDS REVIEW exists for.
+- `tests/fixtures/barenjager/` — five label images with mandatory info
+  scattered across them: the combined-set case, where the app must read
+  all the images as one set rather than per-image.
 - `tests/fixtures/carlo-giacosa/` — an older (6/2006) form revision with
   shifted field numbering.
 - `tests/fixtures/lenz-moser/` — a health warning printed in all capitals
