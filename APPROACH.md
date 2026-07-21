@@ -261,10 +261,10 @@ Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
   detail was not preserved verbatim, Bärenjäger's five images were merged
   into four with text bleeding across per-image entries, and Bärenjäger's
   label ABV was misread as matching the form — so the known 35-vs-39
-  discrepancy was **missed** by the local model (the Anthropic backend
-  validation of the same case is pending account credits). This
-  form-vs-artwork quality split is a documented property of the local
-  backend, not a hidden weakness.
+  discrepancy was **missed** by the local model. This form-vs-artwork
+  quality split is a documented property of the local backend, not a
+  hidden weakness. (The frontier backend was later measured on the same
+  fixtures — see "Frontier backend (Opus) measured results" below.)
 - **Consequence for verdict design:** the rules engine treats a warning
   transcription that is ≥90% similar to the statutory text but not exact
   as NEEDS REVIEW rather than FAIL — plausible transcription error routes
@@ -313,6 +313,46 @@ Ollama 0.32 on an RTX 3080 (10GB), pages upscaled 2× before inference:
   on thinking models (qwen3-vl) silently returns empty content under
   Ollama 0.32, which is why the non-thinking `qwen2.5vl:7b` is the
   recommended local model.
+
+## Frontier backend (Opus) measured results
+
+The cloud path was later measured end-to-end on the same three fixtures
+with `claude-opus-4-8` (`EXTRACTION_MODEL=claude-opus-4-8`), for a
+local-vs-frontier comparison. Honest results, including where the frontier
+model did **not** improve on the local one:
+
+- **Label transcription is markedly better.** Opus returned each
+  government warning essentially verbatim (Bärenjäger's PASSes cleanly),
+  preserved the Lenz Moser hyphenated line break (`BEV-`/`ERAGES`) — which
+  normalize-and-rejoin then correctly recombined — and separated
+  Bärenjäger's **five** affixed images correctly as one combined set (the
+  7B local model collapsed them to four with cross-image bleed). No
+  field-bleed was observed.
+- **Latency badly misses the 5-second target on Opus.** Measured warm
+  wall-clock per document: Carlo Giacosa 11.9s, Lenz Moser 9.0s,
+  Bärenjäger 82.9s (its label region carries five images). Opus vision is
+  slow; this backend trades latency for transcription accuracy. Meeting the
+  <5s target would require the faster hosted model (Haiku, the default
+  constant) or production GPU serving — the one-call/concurrent-region
+  architecture is unchanged either way.
+- **The Bärenjäger 35-vs-39 ABV discrepancy was NOT caught by Opus
+  either.** Opus read the label alcohol content as `35% ALC / VOL`
+  (matching the form's `35`), so the cross-check passed as consistent and
+  the document returned PASS — no discrepancy flagged. This is the same
+  miss the local model made, reached differently (the local model bled the
+  form value; Opus transcribed `35` directly off the label). Note that this
+  puts the fixture's own ground truth in question: the "39%" expected value
+  comes from a human reading of a very-low-resolution printed digit, and
+  **two independent vision models (local qwen2.5vl and Opus) both read
+  `35`**; on direct high-zoom inspection the digit is at the edge of
+  legibility. The honest status is that the intended discrepancy is not
+  detected by either backend, and the source-COLA digit should be
+  re-verified by a human before treating "39%" as settled.
+- **Lenz Moser routed to NEEDS REVIEW, not PASS** — Opus dropped the period
+  after "BIRTH DEFECTS", leaving the warning ~100% similar but not exact, so
+  the near-miss tier correctly sent it to a human rather than passing it.
+  The rejoin mechanism worked; the routing reflects a genuine one-character
+  omission by the model, which is exactly what NEEDS REVIEW is for.
 
 ## Creative problem-solving
 
