@@ -26,6 +26,13 @@ ANCHOR_PREFIX = "affix complete set"
 SPLIT_PAD = 6        # px below the anchor line's bottom edge
 MIN_REGION_PX = 120  # both regions must be at least this tall to be plausible
 
+# Fast-default split: cut at this proportion of the page's PIXEL height
+# (DPI-independent), no OCR. The three real fixtures place the anchor at
+# 0.49-0.61 of height; 0.5 lands at-or-above each, so labels are never
+# sliced into the form region. When the fast cut fails its sanity check the
+# pipeline falls back to anchor OCR for that document (see app/pipeline.py).
+SPLIT_FRACTION = float(os.environ.get("SPLIT_FRACTION", "0.5"))
+
 # Anchor-OCR cost controls. The OCR only LOCATES the anchor line, so it runs
 # on a vertical band (where the anchor sits on Form 5100.31 — measured at
 # 49-61% of page height across the real fixtures) with a fast page-seg mode,
@@ -151,9 +158,9 @@ def anchor_fraction_in_pdf_page(pdf_bytes: bytes, page_number: int) -> float | N
     return None
 
 
-def _split_image_at(image_bytes: bytes, y: int) -> tuple[bytes, bytes] | None:
+def _crop_at(image_bytes: bytes, cut: int) -> tuple[bytes, bytes] | None:
+    """Crop the page into (top, bottom) full-resolution PNGs at row `cut`."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    cut = min(img.height, y + SPLIT_PAD)
     if cut < MIN_REGION_PX or img.height - cut < MIN_REGION_PX:
         return None
     halves = []
@@ -162,6 +169,33 @@ def _split_image_at(image_bytes: bytes, y: int) -> tuple[bytes, bytes] | None:
         img.crop(box).save(buf, format="PNG")
         halves.append(buf.getvalue())
     return halves[0], halves[1]
+
+
+def _split_image_at(image_bytes: bytes, y: int) -> tuple[bytes, bytes] | None:
+    with Image.open(io.BytesIO(image_bytes)) as im:
+        cut = min(im.height, y + SPLIT_PAD)
+    return _crop_at(image_bytes, cut)
+
+
+def fraction_split_document(
+    images: list[tuple[bytes, str]],
+) -> tuple[list[tuple[bytes, str]], list[tuple[bytes, str]]] | None:
+    """Fast geometry split at SPLIT_FRACTION of the first page's height.
+
+    No OCR — the ~30ms common-case path. Returns (form_images,
+    label_images), label_images carrying any subsequent pages unchanged, or
+    None when the page is too short to split plausibly.
+    """
+    if not images:
+        return None
+    first_bytes, _ = images[0]
+    with Image.open(io.BytesIO(first_bytes)) as im:
+        cut = int(SPLIT_FRACTION * im.height)
+    halves = _crop_at(first_bytes, cut)
+    if halves is None:
+        return None
+    form_png, labels_png = halves
+    return [(form_png, "image/png")], [(labels_png, "image/png")] + images[1:]
 
 
 def split_document(
