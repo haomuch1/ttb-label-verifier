@@ -26,6 +26,29 @@ ANCHOR_PREFIX = "affix complete set"
 SPLIT_PAD = 6        # px below the anchor line's bottom edge
 MIN_REGION_PX = 120  # both regions must be at least this tall to be plausible
 
+# Fast-default split: cut at this proportion of the page's PIXEL height
+# (DPI-independent), no OCR. The three real fixtures place the anchor at
+# 0.49-0.61 of height; 0.5 lands at-or-above each, so labels are never
+# sliced into the form region. When the fast cut fails its sanity check the
+# pipeline falls back to anchor OCR for that document (see app/pipeline.py).
+SPLIT_FRACTION = float(os.environ.get("SPLIT_FRACTION", "0.5"))
+
+# Anchor-OCR cost controls. The OCR only LOCATES the anchor line, so it runs
+# on a vertical band (where the anchor sits on Form 5100.31 — measured at
+# 49-61% of page height across the real fixtures) with a fast page-seg mode,
+# instead of full-page OCR. The result maps back to full-resolution
+# coordinates, so the split crop — and thus every extraction read — is
+# pixel-identical to full-page detection. All tunable via env.
+#
+# Downscaling the WHOLE image before OCR was rejected: the ~600px registry
+# printouts lose the anchor entirely below native resolution (measured), so
+# ANCHOR_OCR_MAX_WIDTH only shrinks genuinely large uploads (never below the
+# legibility floor) and is a no-op on the demo fixtures.
+ANCHOR_OCR_BAND_TOP = float(os.environ.get("ANCHOR_OCR_BAND_TOP", "0.20"))
+ANCHOR_OCR_BAND_BOTTOM = float(os.environ.get("ANCHOR_OCR_BAND_BOTTOM", "0.80"))
+ANCHOR_OCR_PSM = os.environ.get("ANCHOR_OCR_PSM", "4")  # 4 = single column, faster, exact here
+ANCHOR_OCR_MAX_WIDTH = int(os.environ.get("ANCHOR_OCR_MAX_WIDTH", "1200"))
+
 
 def _tesseract_cmd() -> str | None:
     explicit = os.environ.get("TESSERACT_CMD")
@@ -40,19 +63,12 @@ def _tesseract_cmd() -> str | None:
     return None
 
 
-def anchor_y_in_image(image_bytes: bytes) -> int | None:
-    """Bottom y-pixel of the anchor line, via OCR. None if not found."""
-    cmd = _tesseract_cmd()
-    if cmd is None:
-        return None
-    try:
-        import pytesseract
-        pytesseract.pytesseract.tesseract_cmd = cmd
-        img = Image.open(io.BytesIO(image_bytes))
-        data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
-    except Exception:
-        return None
-
+def _ocr_anchor_bottom(img, config: str) -> int | None:
+    """Bottom y-pixel of the anchor line within `img`, or None."""
+    import pytesseract
+    data = pytesseract.image_to_data(
+        img, output_type=pytesseract.Output.DICT, config=config
+    )
     lines: dict[tuple, list[int]] = {}
     texts: dict[tuple, list[str]] = {}
     for i, word in enumerate(data["text"]):
@@ -64,6 +80,56 @@ def anchor_y_in_image(image_bytes: bytes) -> int | None:
     for key, words in texts.items():
         if ANCHOR_PREFIX in " ".join(words).lower():
             return max(lines[key])
+    return None
+
+
+def anchor_y_in_image(image_bytes: bytes) -> int | None:
+    """Bottom y-pixel of the anchor line in the FULL-resolution image.
+
+    OCR only needs to LOCATE the anchor, so it runs on a vertical band with
+    a fast page-seg mode rather than OCR-ing the whole page. The y is mapped
+    back to full-resolution coordinates, so the downstream split crop is
+    pixel-identical to full-page detection — extraction reads are unchanged.
+    If the band misses, a full-image OCR pass runs before giving up, so
+    detection is never worse than the original; None then triggers the
+    graceful whole-page fallback in the pipeline.
+    """
+    cmd = _tesseract_cmd()
+    if cmd is None:
+        return None
+    try:
+        import pytesseract
+        pytesseract.pytesseract.tesseract_cmd = cmd
+        full = Image.open(io.BytesIO(image_bytes))
+        fw, fh = full.size
+
+        # Downscale only genuinely large uploads (never the ~600px printouts,
+        # which lose the anchor when shrunk). scale maps OCR y back to full.
+        scale = 1.0
+        work = full
+        if fw > ANCHOR_OCR_MAX_WIDTH:
+            scale = ANCHOR_OCR_MAX_WIDTH / fw
+            work = full.resize(
+                (ANCHOR_OCR_MAX_WIDTH, int(fh * scale)), Image.LANCZOS
+            )
+
+        cfg = f"--psm {ANCHOR_OCR_PSM}"
+        ww, wh = work.size
+        top = int(wh * ANCHOR_OCR_BAND_TOP)
+        bot = int(wh * ANCHOR_OCR_BAND_BOTTOM)
+
+        # Fast path: OCR just the band where the anchor is expected.
+        y = _ocr_anchor_bottom(work.crop((0, top, ww, bot)), cfg)
+        if y is not None:
+            return int(round((top + y) / scale))
+
+        # Band miss — full-image OCR before giving up (never worse than the
+        # original full-page detection).
+        y = _ocr_anchor_bottom(work, cfg)
+        if y is not None:
+            return int(round(y / scale))
+    except Exception:
+        return None
     return None
 
 
@@ -92,9 +158,9 @@ def anchor_fraction_in_pdf_page(pdf_bytes: bytes, page_number: int) -> float | N
     return None
 
 
-def _split_image_at(image_bytes: bytes, y: int) -> tuple[bytes, bytes] | None:
+def _crop_at(image_bytes: bytes, cut: int) -> tuple[bytes, bytes] | None:
+    """Crop the page into (top, bottom) full-resolution PNGs at row `cut`."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    cut = min(img.height, y + SPLIT_PAD)
     if cut < MIN_REGION_PX or img.height - cut < MIN_REGION_PX:
         return None
     halves = []
@@ -103,6 +169,33 @@ def _split_image_at(image_bytes: bytes, y: int) -> tuple[bytes, bytes] | None:
         img.crop(box).save(buf, format="PNG")
         halves.append(buf.getvalue())
     return halves[0], halves[1]
+
+
+def _split_image_at(image_bytes: bytes, y: int) -> tuple[bytes, bytes] | None:
+    with Image.open(io.BytesIO(image_bytes)) as im:
+        cut = min(im.height, y + SPLIT_PAD)
+    return _crop_at(image_bytes, cut)
+
+
+def fraction_split_document(
+    images: list[tuple[bytes, str]],
+) -> tuple[list[tuple[bytes, str]], list[tuple[bytes, str]]] | None:
+    """Fast geometry split at SPLIT_FRACTION of the first page's height.
+
+    No OCR — the ~30ms common-case path. Returns (form_images,
+    label_images), label_images carrying any subsequent pages unchanged, or
+    None when the page is too short to split plausibly.
+    """
+    if not images:
+        return None
+    first_bytes, _ = images[0]
+    with Image.open(io.BytesIO(first_bytes)) as im:
+        cut = int(SPLIT_FRACTION * im.height)
+    halves = _crop_at(first_bytes, cut)
+    if halves is None:
+        return None
+    form_png, labels_png = halves
+    return [(form_png, "image/png")], [(labels_png, "image/png")] + images[1:]
 
 
 def split_document(

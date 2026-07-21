@@ -88,67 +88,142 @@ def make_result(form=None, labels=(), tokens=10):
     )
 
 
-class RecordingExtractor:
+GOOD_LABEL = LabelImage(brand_name="ACME", government_warning="GOVERNMENT WARNING: ...")
+EMPTY_LABEL = LabelImage()
+
+
+class FakeExtractor:
+    """Returns form/label content keyed by region + image bytes, so a test
+    can simulate a good fraction split, a mis-split, or a region error."""
     name = "fake"
 
-    def __init__(self, delay=0.0, fail_regions=()):
+    def __init__(self, frac_label_empty=False, fail_region=None, delay=0.0):
+        self.calls = []            # (region, marker)
+        self.frac_label_empty = frac_label_empty
+        self.fail_region = fail_region
         self.delay = delay
-        self.fail_regions = set(fail_regions)
-        self.calls = []
 
     async def extract(self, images, region=None):
-        self.calls.append(region)
-        await asyncio.sleep(self.delay)
-        if region in self.fail_regions:
+        marker = images[0][0].decode()
+        self.calls.append((region, marker))
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if self.fail_region is not None and region == self.fail_region:
             raise RuntimeError("backend down")
         if region == "form":
-            return make_result(form=FormFields(brand_name="FROM FORM REGION"))
+            return make_result(form=FormFields(brand_name=f"FORM/{marker}"))
         if region == "labels":
-            return make_result(labels=[LabelImage(brand_name="FROM LABEL REGION")])
-        return make_result(form=FormFields(brand_name="WHOLE PAGE"),
-                           labels=[LabelImage(brand_name="WHOLE PAGE")])
+            if marker.startswith("frac") and self.frac_label_empty:
+                return make_result(labels=[EMPTY_LABEL])   # mis-split signal
+            return make_result(labels=[GOOD_LABEL])
+        return make_result(form=FormFields(brand_name="WHOLE"),
+                           labels=[LabelImage(brand_name="WHOLE")])
 
 
-FAKE_SPLIT = ([(b"form-bytes", "image/png")], [(b"label-bytes", "image/png")])
+FRAC_SPLIT = ([(b"frac-form", "image/png")], [(b"frac-label", "image/png")])
+ANCHOR_SPLIT = ([(b"anchor-form", "image/png")], [(b"anchor-label", "image/png")])
 
 
-class TestPipeline:
-    def test_split_merges_form_from_a_and_labels_from_b(self, monkeypatch):
-        monkeypatch.setattr(pipeline, "split_document", lambda *a, **k: FAKE_SPLIT)
-        ex = RecordingExtractor()
+class TestFractionHybrid:
+    def _patch(self, monkeypatch, frac=FRAC_SPLIT, anchor=ANCHOR_SPLIT):
+        monkeypatch.setattr(pipeline, "fraction_split_document", lambda imgs: frac)
+        called = {"anchor": False}
+
+        def anchor_spy(*a, **k):
+            called["anchor"] = True
+            return anchor
+
+        monkeypatch.setattr(pipeline, "split_document", anchor_spy)
+        return called
+
+    def test_fraction_default_used_no_anchor_when_valid(self, monkeypatch):
+        called = self._patch(monkeypatch)
+        ex = FakeExtractor()
         result = asyncio.run(run_extraction(ex, [(b"page", "image/png")]))
-        assert result.extraction.form.brand_name == "FROM FORM REGION"
-        assert result.extraction.labels[0].brand_name == "FROM LABEL REGION"
-        assert sorted(ex.calls, key=str) == ["form", "labels"]
-        assert result.input_tokens == 20  # summed across both calls
+        assert called["anchor"] is False           # tesseract never touched
+        assert ("form", "frac-form") in ex.calls
+        assert ("labels", "frac-label") in ex.calls
+        assert result.extraction.form.brand_name == "FORM/frac-form"
+        assert result.extraction.labels[0].government_warning
 
     def test_region_calls_run_concurrently(self, monkeypatch):
-        monkeypatch.setattr(pipeline, "split_document", lambda *a, **k: FAKE_SPLIT)
-        ex = RecordingExtractor(delay=0.15)
+        self._patch(monkeypatch)
+        ex = FakeExtractor(delay=0.15)
         start = time.perf_counter()
         asyncio.run(run_extraction(ex, [(b"page", "image/png")]))
-        elapsed = time.perf_counter() - start
-        # two 0.15s calls in parallel ≈ 0.15s, not 0.30s
-        assert elapsed < 0.27, f"calls appear sequential: {elapsed:.2f}s"
+        assert time.perf_counter() - start < 0.27   # two 0.15s calls in parallel
 
-    def test_no_anchor_falls_back_to_whole_page(self, monkeypatch):
-        monkeypatch.setattr(pipeline, "split_document", lambda *a, **k: None)
-        ex = RecordingExtractor()
+    def test_missplit_falls_back_to_anchor(self, monkeypatch):
+        called = self._patch(monkeypatch)
+        ex = FakeExtractor(frac_label_empty=True)   # frac label region empty
         result = asyncio.run(run_extraction(ex, [(b"page", "image/png")]))
-        assert ex.calls == [None]
-        assert result.extraction.form.brand_name == "WHOLE PAGE"
+        assert called["anchor"] is True             # fallback fired
+        assert ("labels", "anchor-label") in ex.calls
+        assert result.extraction.form.brand_name == "FORM/anchor-form"
+        assert result.extraction.labels[0].government_warning
 
-    def test_region_failure_falls_back_to_whole_page(self, monkeypatch):
-        monkeypatch.setattr(pipeline, "split_document", lambda *a, **k: FAKE_SPLIT)
-        ex = RecordingExtractor(fail_regions={"labels"})
+    def test_fraction_none_uses_anchor(self, monkeypatch):
+        called = self._patch(monkeypatch, frac=None)
+        ex = FakeExtractor()
         result = asyncio.run(run_extraction(ex, [(b"page", "image/png")]))
-        assert ex.calls[-1] is None  # retried as single whole-page call
-        assert result.extraction.form.brand_name == "WHOLE PAGE"
+        assert called["anchor"] is True
+        assert result.extraction.form.brand_name == "FORM/anchor-form"
 
-    def test_split_crash_never_propagates(self, monkeypatch):
-        def boom(*a, **k):
-            raise RuntimeError("splitter exploded")
-        monkeypatch.setattr(pipeline, "split_document", boom)
-        ex = RecordingExtractor()
+    def test_both_fail_falls_back_to_whole_page(self, monkeypatch):
+        self._patch(monkeypatch, frac=None, anchor=None)
+        ex = FakeExtractor()
         result = asyncio.run(run_extraction(ex, [(b"page", "image/png")]))
-        assert result.extraction.form.brand_name == "WHOLE PAGE"
+        assert ex.calls[-1] == (None, "page")
+        assert result.extraction.form.brand_name == "WHOLE"
+
+    def test_region_error_falls_back_to_whole_page(self, monkeypatch):
+        self._patch(monkeypatch)
+        ex = FakeExtractor(fail_region="labels")    # both frac & anchor labels error
+        result = asyncio.run(run_extraction(ex, [(b"page", "image/png")]))
+        assert result.extraction.form.brand_name == "WHOLE"
+
+
+class TestFractionSplitGeometry:
+    def test_cut_at_fraction_of_height(self):
+        img = Image.new("RGB", (400, 1000), "white")
+        buf = io.BytesIO(); img.save(buf, format="PNG")
+        split = regions.fraction_split_document([(buf.getvalue(), "image/png")])
+        assert split is not None
+        form_h = image_height(split[0][0][0])
+        label_h = image_height(split[1][0][0])
+        assert form_h + label_h == 1000            # full height preserved
+        assert abs(form_h - 500) <= 1              # cut at 0.5
+
+    def test_short_page_returns_none(self):
+        img = Image.new("RGB", (400, 200), "white")  # < 2*MIN_REGION_PX
+        buf = io.BytesIO(); img.save(buf, format="PNG")
+        assert regions.fraction_split_document([(buf.getvalue(), "image/png")]) is None
+
+
+class TestSplitLooksWrong:
+    def _good_labels(self):
+        # real label region: >=2 signals AND the warning present
+        return [LabelImage(brand_name="ACME", government_warning="GOVERNMENT WARNING: ...")]
+
+    def test_good_split_ok(self):
+        assert pipeline.split_looks_wrong(FormFields(brand_name="X"), self._good_labels()) is False
+
+    def test_empty_form_flags(self):
+        assert pipeline.split_looks_wrong(None, self._good_labels()) is True
+        assert pipeline.split_looks_wrong(FormFields(), self._good_labels()) is True
+
+    def test_empty_labels_flags(self):
+        assert pipeline.split_looks_wrong(FormFields(brand_name="X"), []) is True
+        assert pipeline.split_looks_wrong(FormFields(brand_name="X"), [LabelImage()]) is True
+
+    def test_too_few_signals_flags(self):
+        # only one signal (warning alone) — region B not a full label region
+        assert pipeline.split_looks_wrong(
+            FormFields(brand_name="X"), [LabelImage(government_warning="W")]) is True
+
+    def test_missing_warning_flags_even_with_other_content(self):
+        # >=2 signals but NO warning — the too-low-cut failure mode that lost
+        # the warning to region A. Must trigger fallback.
+        assert pipeline.split_looks_wrong(
+            FormFields(brand_name="X"),
+            [LabelImage(brand_name="Y", abv_raw="12%", net_contents="750 ML")]) is True
