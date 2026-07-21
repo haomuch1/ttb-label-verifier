@@ -2,14 +2,18 @@ services:
   - type: web
     name: ttb-label-verifier
     runtime: docker
-    plan: free
+    # starter (not free): always-on so a reviewer's first click doesn't hit a
+    # ~30s cold start from an idled free instance.
+    plan: starter
     healthCheckPath: /health
     envVars:
-      # The free tier can't host a local model, so the public demo uses the
+      # The starter tier can't host a local model, so the public demo uses the
       # Anthropic backend; inside a locked-down network set EXTRACTOR=ollama
       # and point OLLAMA_URL at a self-hosted server instead.
       - key: EXTRACTOR
         value: anthropic
+      - key: EXTRACTION_MODEL
+        value: claude-opus-4-8
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: RATE_LIMIT_PER_IP_PER_MIN
