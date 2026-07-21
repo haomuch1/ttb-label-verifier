@@ -24,8 +24,9 @@ Built as a take-home assessment prototype for a U.S. Treasury IT Specialist
 (AI) position, by directing Claude Code. See [APPROACH.md](APPROACH.md) for
 design decisions, measured results, and honestly-stated limitations.
 
-**Live demo:** deployed on Render (free tier) — see [Deployment](#deployment-render)
-for the cold-start caveat.
+**Live demo:** <https://ttb-label-verifier-nnqf.onrender.com> — always-on
+(Render Starter plan, no spin-down), so requests are served warm. See
+[Deployment](#deployment-render).
 
 ## What it checks
 
@@ -184,9 +185,10 @@ restart; nothing is persisted.
 ## Deployment (Render)
 
 Deployed from this repo via `render.yaml` (Docker; poppler and tesseract
-included in the image). The public demo runs `EXTRACTOR=anthropic` — set
-`ANTHROPIC_API_KEY` in the Render dashboard; it lives server-side only.
+included in the image). The public demo runs `EXTRACTOR=anthropic` on the
+`claude-haiku-4-5` model — set `ANTHROPIC_API_KEY` in the Render dashboard;
+it lives server-side only.
 
-> **Note on cold starts:** Render free-tier instances sleep after
-> inactivity and take ~30 seconds to wake. The under-5-second requirement
-> applies to warm request processing, not cold start.
+> **Always-on:** the demo runs on Render's Starter plan, so it does not
+> spin down and there is no first-request cold start — requests are served
+> warm.

@@ -439,7 +439,7 @@ fans out concurrently with `asyncio.gather` under a semaphore.
   the Anthropic API (claude-haiku-4-5), both schema-constrained
 - pdf2image / poppler for PDF rendering; pypdf for page classification and
   PDF anchor coordinates; tesseract OCR for the image anchor split
-- Render free tier for deployment
+- Render (Starter plan, always-on) for deployment
 
 ## Assumptions
 
